@@ -33,6 +33,7 @@
   --shadow:0 1px 2px rgba(1,50,71,.06),0 1px 8px rgba(1,50,71,.06);
 }
 *{box-sizing:border-box}
+svg{width:18px;height:18px;flex-shrink:0}
 html,body{margin:0;padding:0}
 body{
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -542,21 +543,92 @@ function toast(msg, kind) {
 async function extractPdfText(file, onProgress) {
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-  let text = '';
+  const pages = [];
   const n = pdf.numPages;
   for (let i = 1; i <= n; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    text += content.items.map(it => it.str).join(' ') + '\n\n';
+    pages.push(content.items.map(it => it.str).join(' '));
     if (onProgress) onProgress(i, n);
   }
-  return text;
+  return { pages, fullText: pages.join('\n\n') };
 }
 
+function buildTextFromIncludedPages(pages, includeRanges) {
+  const included = pages.filter((_, idx) => {
+    const pageNum = idx + 1;
+    return includeRanges.some(r => r.start && r.end && pageNum >= r.start && pageNum <= r.end);
+  });
+  return included.join('\n\n');
+}
+
+const LARGE_DOC_THRESHOLD = 110000; // acima disso, oferece exclusão manual de páginas
+
 function trimForModel(text) {
-  const HEAD = 22000, TAIL = 13000;
-  if (text.length <= HEAD + TAIL) return text;
-  return text.slice(0, HEAD) + '\n\n[... trecho intermediário omitido para caber no limite de análise ...]\n\n' + text.slice(-TAIL);
+  const BUDGET = 110000; // contratos "normais" (a maioria) cabem inteiros aqui, sem nenhum corte
+  if (text.length <= BUDGET) return text;
+
+  const HEAD = 9000, TAIL = 4000;
+  const head = text.slice(0, HEAD);
+  const tail = text.slice(-TAIL);
+
+  // Só entra aqui para contratos realmente grandes. A tabela de preços e os
+  // marcos de faturamento costumam ficar no MEIO do documento (ex.: Exhibit B,
+  // Anexo E) — um corte cego de início+fim simplesmente pula essa parte. Em vez
+  // disso, procura trechos perto de palavras-chave financeiras/operacionais em
+  // qualquer posição do texto (em português E em inglês, já que o contrato pode
+  // estar em qualquer um dos dois) e inclui uma janela ao redor de cada uma.
+  const KEYWORDS = [
+    // inglês
+    'billing milestone', 'schedule of payment', 'pricing schedule', 'exhibit b', 'exhibit e',
+    'exhibit a', 'exhibit c', 'exhibit d', 'contract price', 'total contract', 'award amount',
+    'lump sum', 'day rate', 'payment condition', 'invoice', 'termination', 'effective date',
+    'insurance', 'liability', 'governing law',
+    // português
+    'anexo b', 'anexo e', 'anexo a', 'anexo c', 'anexo d', 'cronograma de pagamento',
+    'tabela de preços', 'planilha de preços', 'marco de faturamento', 'marcos de faturamento',
+    'preço do contrato', 'valor total do contrato', 'valor do contrato', 'valor global',
+    'condições de pagamento', 'condição de pagamento', 'fatura', 'nota fiscal', 'rescisão',
+    'vigência', 'data de assinatura', 'seguro', 'responsabilidade civil', 'foro', 'preço unitário',
+    'diária', 'reajuste', 'multa', 'inadimplemento',
+    // comum às duas línguas
+    'cnpj',
+  ];
+  const lower = text.toLowerCase();
+  const windows = [];
+  const WINDOW = 1800;
+  KEYWORDS.forEach(kw => {
+    let idx = lower.indexOf(kw);
+    let count = 0;
+    while (idx !== -1 && count < 2) { // até 2 ocorrências por palavra-chave
+      const start = Math.max(HEAD, idx - 300);
+      const end = Math.min(text.length - TAIL, idx + WINDOW);
+      if (end > start) windows.push([start, end]);
+      idx = lower.indexOf(kw, idx + WINDOW);
+      count++;
+    }
+  });
+  windows.sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  windows.forEach(([s, e]) => {
+    const last = merged[merged.length - 1];
+    if (last && s <= last[1] + 500) last[1] = Math.max(last[1], e);
+    else merged.push([s, e]);
+  });
+
+  let middleBudget = BUDGET - HEAD - TAIL;
+  let middleParts = [];
+  for (const [s, e] of merged) {
+    if (middleBudget <= 0) break;
+    const chunk = text.slice(s, Math.min(e, s + middleBudget));
+    middleParts.push(chunk);
+    middleBudget -= chunk.length;
+  }
+
+  return head +
+    '\n\n[... trecho omitido ...]\n\n' +
+    middleParts.join('\n\n[... trecho omitido ...]\n\n') +
+    '\n\n[... trecho omitido ...]\n\n' + tail;
 }
 
 /* ---------- AI extraction via Netlify Function (proxy seguro p/ Anthropic) ---------- */
@@ -617,14 +689,15 @@ const EXTRACTION_SYSTEM_PROMPT = `Você é um assistente que extrai dados estrut
 }
 
 Regras importantes:
-- "unidadeNegocio" deve ser uma lista escolhida entre: Oceanografia, Geotecnia, Geofísica, Meio-Ambiente, Resiliência, Sustentabilidade, Risco e Segurança Operacional (as que se aplicarem ao escopo, pode ser mais de uma ou nenhuma).
+- "unidadeNegocio" deve ser uma lista escolhida entre: Oceanografia, Geotecnia, Geofísica, Meio-Ambiente, Resiliência, Sustentabilidade, Risco e Segurança Operacional (as que se aplicarem ao escopo, pode ser mais de uma ou nenhuma). Baseie-se no tipo de serviço técnico descrito no escopo (ex.: CPTs e amostragem de solo = Geotecnia; sonar, magnetômetro, sub-bottom profiler = Geofísica; levantamento oceanográfico geral = Oceanografia).
 - CNPJ deve ser só os 14 dígitos, sem formatação.
 - Datas sempre em AAAA-MM-DD; se não encontrar, deixe string vazia "".
-- valorTotal e valor dos marcos devem ser números (sem "R$", sem separador de milhar), use ponto decimal.
+- "medicao" é APENAS a unidade de medição comercial do preço: Lump Sum, Day Rate, Por HH ou similar — NUNCA descreva aqui o cronograma/marcos de faturamento (isso vai em "marcos"), são coisas diferentes.
+- valorTotal e valor dos marcos devem ser números (sem "R$", sem separador de milhar), use ponto decimal. PROCURE ATIVAMENTE o valor total do contrato e a tabela de marcos/cronograma de pagamento no texto — geralmente aparecem em um Anexo/Exhibit de preços ou de pagamento, que pode estar em qualquer parte do documento, não só no início. Só deixe 0/vazio se genuinamente não encontrar nada sobre isso no texto fornecido.
 - O campo "gatilho" de cada marco é o mais importante: descreva com precisão a condição objetiva que libera aquele faturamento (ex.: "assinatura do contrato", "mobilização da embarcação e calibração concluída", "entrega do relatório final draft"), baseando-se no texto do contrato ou da proposta comercial anexa, não apenas no nome do marco.
 - Se o contrato não tiver marcos de faturamento explícitos, tente inferir a partir do cronograma de pagamento descrito; se não houver nenhuma informação, devolva uma lista vazia.
 - Nunca invente CNPJ, números de contrato ou valores que não constem no texto — deixe vazio/0 quando não encontrar.
-- Responda em português, exceto nomes próprios/razão social.`;
+- TODOS os campos de texto livre (escopo, reembolso, clausulaReajuste, clausulaCancelamento, subcontratacao, riscos, observacoes) devem ser escritos em PORTUGUÊS, em suas próprias palavras — um resumo objetivo, não uma cópia/tradução literal de trechos do contrato em inglês. Nomes próprios, razão social e siglas (ex.: CPT, Exhibit B) permanecem como estão.`;
 
 async function callClaudeExtraction(contractText) {
   const trimmed = trimForModel(contractText);
@@ -1713,7 +1786,7 @@ async function handleAditivoUpload(file) {
     aditivoState.fileHash = hash;
     aditivoState.progressMsg = 'Lendo o PDF…';
     renderAditivoModal();
-    const text = await extractPdfText(file, (cur, total) => {
+    const { fullText: text } = await extractPdfText(file, (cur, total) => {
       aditivoState.progressMsg = `Lendo página ${cur} de ${total}…`;
       const el = document.getElementById('aditivoProgressMsg');
       if (el) el.textContent = aditivoState.progressMsg;
@@ -2010,6 +2083,10 @@ function resetWizard() {
     progressMsg: '',
     duplicateFile: null,
     duplicateNumber: null,
+    awaitingPageSelection: false,
+    pages: null,
+    pageCount: 0,
+    includeRanges: [{ start: '', end: '' }],
     data: {
       cliente: { nome: '', cnpj: '' },
       fornecedor: { nome: 'OceanPact Geociências LTDA.', cnpj: '' },
@@ -2071,6 +2148,7 @@ function renderWizardStep1() {
         </div>
       </div>`;
   }
+  if (wizard.awaitingPageSelection) return renderPageSelectStep();
   return `
     <div class="card card-pad">
       <div class="section-title">1. Envie o contrato em PDF</div>
@@ -2083,6 +2161,36 @@ function renderWizardStep1() {
       ${wizard.error ? `<div class="help" style="color:var(--danger);margin-top:10px">${icon('alert')} ${escapeHtml(wizard.error)}</div>` : ''}
       <div class="divider"></div>
       <button class="btn btn-ghost" id="btnSkipManual">Prefiro preencher manualmente, sem IA →</button>
+    </div>`;
+}
+
+function renderPageSelectStep() {
+  const charCount = wizard.pages.join('').length;
+  const rows = wizard.includeRanges.map((r, i) => `
+    <div class="field-row" style="align-items:flex-end">
+      <div class="field" style="max-width:160px"><label>Página inicial</label><input type="number" min="1" max="${wizard.pageCount}" value="${r.start}" data-range-idx="${i}" data-range-field="start"></div>
+      <div class="field" style="max-width:160px"><label>Página final</label><input type="number" min="1" max="${wizard.pageCount}" value="${r.end}" data-range-idx="${i}" data-range-field="end"></div>
+      <div class="field" style="flex:0"><button type="button" class="icon-btn" data-remove-range="${i}" title="Remover trecho">${icon('trash')}</button></div>
+    </div>`).join('');
+
+  return `
+    <div class="card card-pad">
+      <div style="display:flex;gap:12px;margin-bottom:16px">
+        ${icon('info')}
+        <div>
+          <div style="font-weight:700;color:var(--navy-darker)">Este contrato é grande</div>
+          <p class="help" style="margin-top:2px">${wizard.pageCount} páginas, aproximadamente ${charCount.toLocaleString('pt-BR')} caracteres de texto. Para caber na análise por IA com boa qualidade, você pode indicar quais trechos de páginas <strong>considerar</strong> (ex.: onde ficam os dados do cliente, o valor do contrato e os marcos de faturamento) — pode adicionar mais de um trecho, já que essas partes costumam aparecer em pontos diferentes do documento. Se preferir, deixe em branco e pule direto para a análise; nesse caso o site tenta localizar sozinho as partes mais relevantes.</p>
+        </div>
+      </div>
+      <div class="section-title">Páginas a considerar (opcional)</div>
+      <div id="rangesList">${rows}</div>
+      <button type="button" class="btn btn-outline btn-sm" id="btnAddRange" style="margin-top:8px">${icon('plus')}Adicionar outro trecho</button>
+      ${wizard.error ? `<div class="help" style="color:var(--danger);margin-top:14px">${icon('alert')} ${escapeHtml(wizard.error)}</div>` : ''}
+      <div class="divider"></div>
+      <div style="display:flex;justify-content:space-between">
+        <button type="button" class="btn btn-ghost" id="btnBackFromPages">← Recomeçar</button>
+        <button type="button" class="btn btn-primary" id="btnProceedAnalysis">${icon('check')}Analisar com IA</button>
+      </div>
     </div>`;
 }
 
@@ -2226,6 +2334,16 @@ function wireWizardEvents() {
       document.getElementById('btnCancelDup').addEventListener('click', () => { resetWizard(); render(); });
       return;
     }
+    if (wizard.awaitingPageSelection) {
+      wireRangeInputs();
+      document.getElementById('btnAddRange').addEventListener('click', () => {
+        wizard.includeRanges.push({ start: '', end: '' });
+        render();
+      });
+      document.getElementById('btnBackFromPages').addEventListener('click', () => { resetWizard(); render(); });
+      document.getElementById('btnProceedAnalysis').addEventListener('click', () => proceedToAnalysis());
+      return;
+    }
     const input = document.getElementById('pdfInput');
     const drop = document.getElementById('pdfDrop');
     drop.addEventListener('click', () => input.click());
@@ -2265,6 +2383,23 @@ function wireWizardEvents() {
   }
 }
 
+function wireRangeInputs() {
+  document.querySelectorAll('[data-range-idx]').forEach(el => {
+    el.addEventListener('input', () => {
+      const i = Number(el.dataset.rangeIdx);
+      const v = el.value === '' ? '' : Number(el.value);
+      wizard.includeRanges[i][el.dataset.rangeField] = v;
+    });
+  });
+  document.querySelectorAll('[data-remove-range]').forEach(el => {
+    el.addEventListener('click', () => {
+      wizard.includeRanges.splice(Number(el.dataset.removeRange), 1);
+      if (wizard.includeRanges.length === 0) wizard.includeRanges.push({ start: '', end: '' });
+      render();
+    });
+  });
+}
+
 async function handlePdfUpload(file, force) {
   wizard.fileName = file.name;
   wizard.pendingFile = file;
@@ -2285,24 +2420,57 @@ async function handlePdfUpload(file, force) {
     wizard.fileHash = hash;
     wizard.progressMsg = 'Lendo o PDF…';
     render();
-    const text = await extractPdfText(file, (cur, total) => {
+    const { pages, fullText } = await extractPdfText(file, (cur, total) => {
       wizard.progressMsg = `Lendo página ${cur} de ${total}…`;
       const msgEl = document.getElementById('wizardProgressMsg');
       if (msgEl) msgEl.textContent = wizard.progressMsg;
     });
-    wizard.progressMsg = 'Analisando o contrato com IA…';
-    render();
-    const parsed = await callClaudeExtraction(text);
-    mergeExtractedData(parsed);
-    wizard.duplicateNumber = findContractByNumber(onlyDigits(wizard.data.cliente.cnpj), wizard.data.contrato.numero);
-    wizard.step = 3;
-    render();
+    wizard.pages = pages;
+    wizard.pageCount = pages.length;
+
+    if (fullText.length > LARGE_DOC_THRESHOLD) {
+      wizard.step = 1;
+      wizard.awaitingPageSelection = true;
+      render();
+      return;
+    }
+    await runAiAnalysis(fullText);
   } catch (err) {
     console.error(err);
     wizard.step = 1;
     wizard.error = (err && err.message) ? err.message : 'Não foi possível processar o PDF. Tente novamente ou preencha manualmente.';
     render();
   }
+}
+
+async function proceedToAnalysis() {
+  const validRanges = wizard.includeRanges.filter(r => r.start && r.end && r.end >= r.start);
+  const text = validRanges.length ? buildTextFromIncludedPages(wizard.pages, validRanges) : wizard.pages.join('\n\n');
+  wizard.awaitingPageSelection = false;
+  wizard.step = 2;
+  wizard.progressMsg = 'Analisando o contrato com IA…';
+  wizard.error = null;
+  render();
+  try {
+    await runAiAnalysis(text);
+  } catch (err) {
+    console.error(err);
+    wizard.step = 1;
+    wizard.awaitingPageSelection = true;
+    wizard.error = (err && err.message) ? err.message : 'Não foi possível analisar o texto. Tente ajustar as páginas selecionadas ou preencha manualmente.';
+    render();
+  }
+}
+
+async function runAiAnalysis(text) {
+  wizard.step = 2;
+  wizard.progressMsg = 'Analisando o contrato com IA…';
+  render();
+  const parsed = await callClaudeExtraction(text);
+  mergeExtractedData(parsed);
+  wizard.duplicateNumber = findContractByNumber(onlyDigits(wizard.data.cliente.cnpj), wizard.data.contrato.numero);
+  wizard.step = 3;
+  render();
 }
 
 function mergeExtractedData(parsed) {
