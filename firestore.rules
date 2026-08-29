@@ -38,5 +38,6 @@ service cloud.firestore {
     match /clients/{doc}   { allow read, write: if isActiveMember(); }
     match /contracts/{doc} { allow read, write: if isActiveMember(); }
     match /billings/{doc}  { allow read, write: if isActiveMember(); }
+    match /contractLines/{doc} { allow read, write: if isActiveMember(); }
   }
 }

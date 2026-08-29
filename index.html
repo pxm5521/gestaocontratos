@@ -6,6 +6,7 @@
 <title>Contratos OCP — Gestão &amp; Faturamento</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
 <style>
 :root{
   --navy:#004A64;
@@ -376,25 +377,33 @@ const PLACEHOLDER_TOKENS = [
   ['{{CONTRATO_NUMERO}}', 'Número do contrato'],
   ['{{CONTRATO_VALOR_TOTAL}}', 'Valor total do contrato'],
   ['{{MOEDA}}', 'Moeda do contrato'],
+  ['{{ESCOPO}}', 'Escopo/descrição do serviço do contrato'],
   ['{{MARCO_CODIGO}}', 'Código do marco (ex. BM1)'],
   ['{{MARCO_DESCRICAO}}', 'Descrição do marco'],
   ['{{MARCO_GATILHO}}', 'Condição de liberação do marco'],
   ['{{MARCO_PERCENTUAL}}', 'Percentual do marco'],
   ['{{MARCO_VALOR}}', 'Valor do marco (R$)'],
+  ['{{PERIODO_MEDICAO}}', 'Ex.: "1º Marco (BM1)" — período/marco de medição'],
+  ['{{PROFORMA_NUMERO}}', 'Número sequencial da proforma (só no modelo de Proforma)'],
   ['{{DATA_LIBERACAO}}', 'Data em que o faturamento foi liberado'],
-  ['{{DATA_GERACAO}}', 'Data de geração do BM (hoje)'],
+  ['{{DATA_GERACAO}}', 'Data de geração do documento (hoje)'],
+  ['{{LINHA1_DESCRICAO}} … {{LINHAn_DESCRICAO}}', 'Descrição da linha 1, 2, 3... do contrato incluída neste marco'],
+  ['{{LINHA1_UNIDADE}} … {{LINHAn_UNIDADE}}', 'Unidade de medida da linha (ex.: Lump Sum, dia)'],
+  ['{{LINHA1_QTD}} … {{LINHAn_QTD}}', 'Quantidade lançada da linha neste marco'],
+  ['{{LINHA1_VALOR_UNIT}} … {{LINHAn_VALOR_UNIT}}', 'Preço unitário da linha'],
+  ['{{LINHA1_CODIGO}} … {{LINHAn_CODIGO}}', 'Código/item da linha no contrato'],
 ];
 
 /* ---------- storage helpers (Firestore) ---------- */
-const DB = { clients: {}, contracts: [], billings: [], loaded: false };
+const DB = { clients: {}, contracts: [], billings: [], contractLines: [], loaded: false };
 let _unsubscribers = [];
 let _pendingRenders = 0;
 
 function startFirestoreSync(onFirstLoadDone) {
   const { db, fb } = window.__firebase;
-  let loadedFlags = { clients: false, contracts: false, billings: false };
+  let loadedFlags = { clients: false, contracts: false, billings: false, contractLines: false };
   function checkAllLoaded() {
-    if (loadedFlags.clients && loadedFlags.contracts && loadedFlags.billings && !DB.loaded) {
+    if (loadedFlags.clients && loadedFlags.contracts && loadedFlags.billings && loadedFlags.contractLines && !DB.loaded) {
       DB.loaded = true;
       if (onFirstLoadDone) onFirstLoadDone();
     }
@@ -422,13 +431,20 @@ function startFirestoreSync(onFirstLoadDone) {
     if (DB.loaded) render();
   }, (err) => { console.error('billings sync', err); toast('Erro ao sincronizar faturamentos: ' + err.message, 'err'); });
 
-  _unsubscribers = [unsub1, unsub2, unsub3];
+  const unsub4 = fb.onSnapshot(fb.collection(db, 'contractLines'), (snap) => {
+    DB.contractLines = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    loadedFlags.contractLines = true;
+    checkAllLoaded();
+    if (DB.loaded) render();
+  }, (err) => { console.error('contractLines sync', err); toast('Erro ao sincronizar itens de preço: ' + err.message, 'err'); });
+
+  _unsubscribers = [unsub1, unsub2, unsub3, unsub4];
 }
 
 function stopFirestoreSync() {
   _unsubscribers.forEach(u => { try { u(); } catch (e) {} });
   _unsubscribers = [];
-  DB.clients = {}; DB.contracts = []; DB.billings = []; DB.loaded = false;
+  DB.clients = {}; DB.contracts = []; DB.billings = []; DB.contractLines = []; DB.loaded = false;
 }
 
 function cleanForFirestore(obj) {
@@ -453,6 +469,7 @@ async function dbSave(part) {
     if (part === 'clients' || !part) await syncCollection('clients', Object.values(DB.clients), c => c.cnpj);
     if (part === 'contracts' || !part) await syncCollection('contracts', DB.contracts, c => c.id);
     if (part === 'billings' || !part) await syncCollection('billings', DB.billings, b => b.id);
+    if (part === 'contractLines' || !part) await syncCollection('contractLines', DB.contractLines, l => l.id);
   } catch (e) {
     console.error('Erro ao salvar', e);
     toast('Falha ao salvar no banco de dados: ' + (e.message || e), 'err');
@@ -529,6 +546,7 @@ function getClient(cnpj) { return DB.clients[cnpj]; }
 function getContract(id) { return DB.contracts.find(c => c.id === id); }
 function contractsForClient(cnpj) { return DB.contracts.filter(c => c.clientCnpj === cnpj); }
 function billingsForContract(id) { return DB.billings.filter(b => b.contractId === id).sort((a,b)=> (a.codigo||'').localeCompare(b.codigo||'')); }
+function contractLinesForContract(id) { return DB.contractLines.filter(l => l.contractId === id).sort((a,b)=> (a.codigo||'').localeCompare(b.codigo||'')); }
 
 /* ---------- toast ---------- */
 function toast(msg, kind) {
@@ -737,8 +755,14 @@ async function callClaudeAditivoExtraction(contractContext, aditivoText) {
   return callClaudeViaFunction(ADITIVO_SYSTEM_PROMPT, userMsg);
 }
 
-/* ---------- Excel BM generation (SheetJS) ---------- */
+/* ---------- Excel BM / Proforma generation (SheetJS) ---------- */
+function ordinalPt(n) {
+  return n + 'º';
+}
+
 function buildTokenMap(client, contract, billing) {
+  const numMatch = (billing.codigo || '').match(/\d+/);
+  const ordinal = numMatch ? ordinalPt(Number(numMatch[0])) : (billing.codigo || '');
   return {
     '{{CLIENTE}}': client ? client.nome : '',
     '{{CNPJ_CLIENTE}}': client ? formatCNPJ(client.cnpj) : '',
@@ -747,14 +771,67 @@ function buildTokenMap(client, contract, billing) {
     '{{CONTRATO_NUMERO}}': contract.numero || '',
     '{{CONTRATO_VALOR_TOTAL}}': contract.valorTotal ? Number(contract.valorTotal).toLocaleString('pt-BR', {minimumFractionDigits:2}) : '',
     '{{MOEDA}}': contract.moeda || '',
+    '{{ESCOPO}}': contract.escopo || '',
     '{{MARCO_CODIGO}}': billing.codigo || '',
     '{{MARCO_DESCRICAO}}': billing.descricao || '',
     '{{MARCO_GATILHO}}': billing.gatilho || '',
     '{{MARCO_PERCENTUAL}}': billing.percentual || '',
     '{{MARCO_VALOR}}': billing.valor ? Number(billing.valor).toLocaleString('pt-BR', {minimumFractionDigits:2}) : '',
+    '{{PERIODO_MEDICAO}}': ordinal + ' Marco (' + (billing.codigo || '') + ')',
+    '{{PROFORMA_NUMERO}}': (contract.proformaCounter || 0) + 1,
     '{{DATA_LIBERACAO}}': formatDate(billing.releasedDate),
     '{{DATA_GERACAO}}': formatDate(todayISO()),
   };
+}
+
+// Detecta o maior índice de slot de linha (LINHA1_, LINHA2_...) presente no modelo,
+// para não tentar preencher além do que o modelo realmente tem.
+function detectMaxLineSlots(wb) {
+  let max = 0;
+  wb.SheetNames.forEach(name => {
+    const sheet = wb.Sheets[name];
+    Object.keys(sheet).forEach(cellRef => {
+      if (cellRef[0] === '!') return;
+      const cell = sheet[cellRef];
+      if (cell && typeof cell.v === 'string') {
+        const m = cell.v.match(/{{LINHA(\d+)_/g);
+        if (m) m.forEach(tok => {
+          const n = Number(tok.match(/\d+/)[0]);
+          if (n > max) max = n;
+        });
+      }
+    });
+  });
+  return max;
+}
+
+// billing.linhas = [{lineId, quantidade}]; contractLines = catálogo de itens do contrato
+function buildLineTokenMap(billing, contractLines, maxSlots) {
+  const items = (billing.linhas || [])
+    .filter(l => Number(l.quantidade) > 0)
+    .map(l => {
+      const line = contractLines.find(cl => cl.id === l.lineId);
+      if (!line) return null;
+      return {
+        codigo: line.codigo || '', descricao: line.descricao || '', unidade: line.unidade || '',
+        qtd: Number(l.quantidade) || 0, valorUnit: Number(line.precoUnitario) || 0,
+      };
+    })
+    .filter(Boolean);
+
+  const map = {};
+  for (let i = 1; i <= maxSlots; i++) {
+    const it = items[i - 1];
+    map[`{{LINHA${i}_CODIGO}}`] = it ? it.codigo : '';
+    map[`{{LINHA${i}_DESCRICAO}}`] = it ? it.descricao : '';
+    map[`{{LINHA${i}_UNIDADE}}`] = it ? it.unidade : '';
+    map[`{{LINHA${i}_QTD}}`] = it ? it.qtd : '';
+    map[`{{LINHA${i}_VALOR_UNIT}}`] = it ? it.valorUnit.toLocaleString('pt-BR', {minimumFractionDigits:2}) : '';
+  }
+  if (items.length > maxSlots) {
+    toast(`Atenção: este marco tem ${items.length} linhas, mas o modelo só tem ${maxSlots} espaço(s). Amplie o modelo com mais linhas LINHA${maxSlots+1}_... se precisar.`, 'err');
+  }
+  return map;
 }
 
 function applyTokensToWorkbook(wb, tokenMap) {
@@ -766,7 +843,7 @@ function applyTokensToWorkbook(wb, tokenMap) {
       if (cell && typeof cell.v === 'string' && cell.v.indexOf('{{') !== -1) {
         let v = cell.v;
         Object.keys(tokenMap).forEach(tok => {
-          if (v.indexOf(tok) !== -1) v = v.split(tok).join(tokenMap[tok]);
+          if (v.indexOf(tok) !== -1) v = v.split(tok).join(String(tokenMap[tok]));
         });
         cell.v = v;
         if (cell.w) cell.w = v;
@@ -777,21 +854,44 @@ function applyTokensToWorkbook(wb, tokenMap) {
   return wb;
 }
 
-async function generateBmFile(client, contract, billing) {
-  if (!contract.bmTemplateUrl) throw new Error('Este contrato ainda não tem um modelo de BM em Excel cadastrado.');
-  const resp = await fetch(contract.bmTemplateUrl);
-  if (!resp.ok) throw new Error('Não foi possível baixar o modelo de BM do banco de dados (HTTP ' + resp.status + ').');
+async function loadTemplateWorkbook(url) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('Não foi possível baixar o modelo do banco de dados (HTTP ' + resp.status + ').');
   const arrBuf = await resp.arrayBuffer();
-  const wb = XLSX.read(new Uint8Array(arrBuf), { type: 'array', cellStyles: true });
-  applyTokensToWorkbook(wb, buildTokenMap(client, contract, billing));
+  return XLSX.read(new Uint8Array(arrBuf), { type: 'array', cellStyles: true });
+}
+
+function downloadWorkbook(wb, fileName) {
   const out = XLSX.write(wb, { type: 'array', bookType: 'xlsx', cellStyles: true });
   const blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const fileName = 'BM_' + (billing.codigo || 'marco') + '_' + (contract.numero || contract.id).toString().replace(/[^\w-]/g, '') + '.xlsx';
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = fileName;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+async function generateBmFile(client, contract, billing) {
+  if (!contract.bmTemplateUrl) throw new Error('Este contrato ainda não tem um modelo de BM em Excel cadastrado.');
+  const wb = await loadTemplateWorkbook(contract.bmTemplateUrl);
+  const maxSlots = detectMaxLineSlots(wb);
+  const lines = contractLinesForContract(contract.id);
+  applyTokensToWorkbook(wb, { ...buildTokenMap(client, contract, billing), ...(maxSlots ? buildLineTokenMap(billing, lines, maxSlots) : {}) });
+  const fileName = 'BM_' + (billing.codigo || 'marco') + '_' + (contract.numero || contract.id).toString().replace(/[^\w-]/g, '') + '.xlsx';
+  downloadWorkbook(wb, fileName);
+  return fileName;
+}
+
+async function generateProformaFile(client, contract, billing) {
+  if (!contract.proformaTemplateUrl) throw new Error('Este contrato ainda não tem um modelo de Proforma em Excel cadastrado.');
+  const wb = await loadTemplateWorkbook(contract.proformaTemplateUrl);
+  const maxSlots = detectMaxLineSlots(wb);
+  const lines = contractLinesForContract(contract.id);
+  applyTokensToWorkbook(wb, { ...buildTokenMap(client, contract, billing), ...(maxSlots ? buildLineTokenMap(billing, lines, maxSlots) : {}) });
+  const fileName = 'Proforma_' + (billing.codigo || 'marco') + '_' + (contract.numero || contract.id).toString().replace(/[^\w-]/g, '') + '.xlsx';
+  downloadWorkbook(wb, fileName);
+  contract.proformaCounter = (contract.proformaCounter || 0) + 1;
+  await dbSave('contracts');
   return fileName;
 }
 
@@ -1181,6 +1281,7 @@ function renderFichaView(contract, client) {
         <div class="section-title">Dados do contrato</div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-outline btn-sm" id="btnEditFicha">${icon('edit')}Editar</button>
+          <button class="btn btn-outline btn-sm" id="btnExportFicha">${icon('download')}Exportar Word</button>
           <button class="btn btn-danger btn-sm" id="btnDeleteContract">${icon('trash')}Excluir contrato</button>
         </div>
       </div>
@@ -1238,6 +1339,16 @@ function custoCell(b, kind) {
 }
 
 function renderMarcosTab(contract) {
+  const lines = contractLinesForContract(contract.id);
+  const lineRows = lines.map(l => `
+    <tr>
+      <td style="width:70px"><input type="text" value="${escapeHtml(l.codigo||'')}" data-lfield="codigo" data-lid="${l.id}" style="width:60px"></td>
+      <td style="min-width:220px"><textarea rows="2" data-lfield="descricao" data-lid="${l.id}">${escapeHtml(l.descricao||'')}</textarea></td>
+      <td style="width:120px"><input type="text" value="${escapeHtml(l.unidade||'')}" data-lfield="unidade" data-lid="${l.id}" placeholder="ex: Lump Sum, dia"></td>
+      <td style="width:140px"><input type="number" step="0.01" value="${l.precoUnitario||''}" data-lfield="precoUnitario" data-lid="${l.id}"></td>
+      <td style="width:40px"><button class="icon-btn" data-del-line="${l.id}" title="Remover item">${icon('trash')}</button></td>
+    </tr>`).join('');
+
   const bs = billingsForContract(contract.id);
   const rows = bs.map(b => {
     const valor = Number(b.valor) || 0;
@@ -1266,11 +1377,24 @@ function renderMarcosTab(contract) {
   }).join('');
 
   return `
+    <div class="card card-pad" style="margin-bottom:18px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="section-title">Itens de preço do contrato</div>
+        <button class="btn btn-outline btn-sm" id="btnAddLine">${icon('plus')}Novo item</button>
+      </div>
+      <p class="help">Catálogo dos itens/linhas do contrato (igual ao Anexo E de preços). Cada marco de faturamento pode incluir uma ou mais dessas linhas com a quantidade lançada naquela rodada — use isso quando um BM cobrir mais de uma linha de medição.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Item</th><th>Descrição</th><th>Unidade</th><th>Preço unitário (R$)</th><th></th></tr></thead>
+          <tbody>${lineRows || `<tr><td colspan="5" class="tbl-empty">Nenhum item cadastrado ainda.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
     <div class="card card-pad" style="margin-bottom:16px;background:var(--blue-pale);border:none">
       <div style="display:flex;gap:10px;align-items:flex-start">
         ${icon('info')}
         <div style="font-size:12.5px">
-          <strong>Custo e margem são só para controle interno.</strong> Esses campos e as planilhas anexadas aqui <u>nunca</u> aparecem no BM gerado para o cliente — o BM (aba "Gerenciar faturamento") usa só os tokens de cobrança (valor, marco, datas). Custo previsto é o orçado; custo realizado é o apurado depois da execução — a margem de cada um é calculada separadamente.
+          <strong>Custo e margem são só para controle interno.</strong> Esses campos e as planilhas anexadas aqui <u>nunca</u> aparecem no BM/Proforma gerados para o cliente. Custo previsto é o orçado; custo realizado é o apurado depois da execução — a margem de cada um é calculada separadamente.
         </div>
       </div>
     </div>
@@ -1279,7 +1403,7 @@ function renderMarcosTab(contract) {
         <div class="section-title">Marcos de faturamento (Anexo B)</div>
         <button class="btn btn-outline btn-sm" id="btnAddMilestone">${icon('plus')}Novo marco</button>
       </div>
-      <p class="help">Edite diretamente as células. As alterações são salvas automaticamente. O campo <strong>gatilho</strong> deve descrever objetivamente o que libera o faturamento.</p>
+      <p class="help">Edite diretamente as células. As alterações são salvas automaticamente. O campo <strong>gatilho</strong> deve descrever objetivamente o que libera o faturamento. Para escolher quais itens de preço entram em cada marco, use o botão "Linhas" na aba Gerenciar faturamento.</p>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Marco</th><th>Descrição</th><th>%</th><th>Valor cobrado (R$)</th><th>O que libera o faturamento</th><th>Data prevista</th><th>Custo previsto</th><th>Margem prevista</th><th>Custo realizado</th><th>Margem realizada</th><th></th></tr></thead>
@@ -1290,9 +1414,30 @@ function renderMarcosTab(contract) {
 }
 
 /* ---- FATURAMENTO TAB ---- */
+function templateBlock(opts) {
+  // opts: {title, hint, hasTemplate, name, dropId, inputId, replaceId}
+  return `
+    <div class="card card-pad">
+      <div class="section-title">${opts.title}</div>
+      ${opts.hasTemplate ? `
+        <div style="display:flex;align-items:center;gap:10px;justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:8px">${icon('sheet')}<div><strong>${escapeHtml(opts.name||'modelo.xlsx')}</strong><div class="muted" style="font-size:11.5px">Modelo cadastrado para este contrato</div></div></div>
+          <button class="btn btn-outline btn-sm" id="${opts.replaceId}">Substituir modelo</button>
+        </div>` : `
+        <div class="upload-zone" id="${opts.dropId}" style="padding:22px">
+          ${icon('upload')}
+          <div style="font-weight:600;color:var(--navy-darker);margin-top:4px">${opts.hint}</div>
+          <div class="help">Use tokens como <span class="mono">{{MARCO_CODIGO}}</span> e <span class="mono">{{LINHA1_DESCRICAO}}</span> nas células — veja a lista completa abaixo.</div>
+        </div>`}
+      <input type="file" id="${opts.inputId}" accept=".xlsx" style="display:none">
+    </div>`;
+}
+
 function renderFaturamentoTab(contract, client) {
   const bs = billingsForContract(contract.id);
-  const hasTemplate = !!contract.bmTemplateUrl;
+  const lines = contractLinesForContract(contract.id);
+  const hasBmTemplate = !!contract.bmTemplateUrl;
+  const hasProformaTemplate = !!contract.proformaTemplateUrl;
 
   const rows = bs.map(b => {
     const st = computeStatus(b);
@@ -1301,6 +1446,7 @@ function renderFaturamentoTab(contract, client) {
         <span class="muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.3px">${label}</span><br/>
         <input type="date" value="${val || ''}" data-datefield="${field}" data-bid="${b.id}" style="padding:4px 6px;font-size:12px">
       </div>`;
+    const linhasCount = (b.linhas || []).filter(l => Number(l.quantidade) > 0).length;
     return `
     <tr>
       <td><strong>${escapeHtml(b.codigo)}</strong><div class="muted" style="max-width:220px;font-size:11.5px">${escapeHtml((b.descricao||'').slice(0,70))}</div></td>
@@ -1308,12 +1454,17 @@ function renderFaturamentoTab(contract, client) {
       <td>${statusBadge(st)}</td>
       <td>${dateField('Liberação', 'releasedDate', b.releasedDate)}</td>
       <td>${dateField('BM enviado', 'bmSentDate', b.bmSentDate)}</td>
-      <td>${dateField('BM aprovado', 'bmApprovedDate', b.bmApprovedDate)}</td>
+      <td>${dateField('Proforma enviada', 'proformaSentDate', b.proformaSentDate)}</td>
+      <td>${dateField('Aprovado (BM+Proforma)', 'bmApprovedDate', b.bmApprovedDate)}</td>
       <td>${dateField('NF enviada', 'nfSentDate', b.nfSentDate)}</td>
       <td>${dateField('Pagamento', 'paymentDate', b.paymentDate)}</td>
-      <td style="min-width:150px">
-        ${!b.releasedDate ? `<button class="btn btn-accent btn-sm btn-block" data-release="${b.id}">${icon('bolt')}Liberar</button>` : ''}
-        ${b.releasedDate ? `<button class="btn btn-outline btn-sm btn-block" data-genbm="${b.id}" ${!hasTemplate ? 'disabled title="Cadastre o modelo de BM abaixo"' : ''}>${icon('sheet')}Gerar BM</button>` : ''}
+      <td style="min-width:160px">
+        <div style="display:flex;flex-direction:column;gap:4px">
+          ${!b.releasedDate ? `<button class="btn btn-accent btn-sm btn-block" data-release="${b.id}">${icon('bolt')}Liberar</button>` : ''}
+          ${b.releasedDate ? `<button class="btn btn-outline btn-sm btn-block" data-edit-linhas="${b.id}">${icon('edit')}Linhas${linhasCount ? ' ('+linhasCount+')' : ''}</button>` : ''}
+          ${b.releasedDate ? `<button class="btn btn-outline btn-sm btn-block" data-genbm="${b.id}" ${!hasBmTemplate ? 'disabled title="Cadastre o modelo de BM abaixo"' : ''}>${icon('sheet')}Gerar BM</button>` : ''}
+          ${b.releasedDate ? `<button class="btn btn-outline btn-sm btn-block" data-genproforma="${b.id}" ${!hasProformaTemplate ? 'disabled title="Cadastre o modelo de Proforma abaixo"' : ''}>${icon('sheet')}Gerar Proforma</button>` : ''}
+        </div>
       </td>
     </tr>`;
   }).join('');
@@ -1321,21 +1472,13 @@ function renderFaturamentoTab(contract, client) {
   const tokenRows = PLACEHOLDER_TOKENS.map(([tok, desc]) => `<tr><td class="mono">${tok}</td><td class="muted">${desc}</td></tr>`).join('');
 
   return `
+    <div class="grid grid-2" style="margin-bottom:12px">
+      ${templateBlock({ title: 'Modelo de BM (Excel)', hint: 'Envie o modelo de BM em Excel deste contrato', hasTemplate: hasBmTemplate, name: contract.bmTemplateName, dropId: 'templateDrop', inputId: 'templateInput', replaceId: 'btnReplaceTemplate' })}
+      ${templateBlock({ title: 'Modelo de Proforma (Excel)', hint: 'Envie o modelo de Proforma em Excel deste contrato', hasTemplate: hasProformaTemplate, name: contract.proformaTemplateName, dropId: 'proformaTemplateDrop', inputId: 'proformaTemplateInput', replaceId: 'btnReplaceProformaTemplate' })}
+    </div>
     <div class="card card-pad" style="margin-bottom:18px">
-      <div class="section-title">Modelo de BM (Excel)</div>
-      ${hasTemplate ? `
-        <div style="display:flex;align-items:center;gap:10px;justify-content:space-between">
-          <div style="display:flex;align-items:center;gap:8px">${icon('sheet')}<div><strong>${escapeHtml(contract.bmTemplateName||'modelo.xlsx')}</strong><div class="muted" style="font-size:11.5px">Modelo cadastrado para este contrato</div></div></div>
-          <button class="btn btn-outline btn-sm" id="btnReplaceTemplate">Substituir modelo</button>
-        </div>` : `
-        <div class="upload-zone" id="templateDrop" style="padding:22px">
-          ${icon('upload')}
-          <div style="font-weight:600;color:var(--navy-darker);margin-top:4px">Envie o modelo de BM em Excel deste contrato</div>
-          <div class="help">Use tokens como <span class="mono">{{MARCO_CODIGO}}</span> nas células — veja a lista completa abaixo.</div>
-        </div>`}
-      <input type="file" id="templateInput" accept=".xlsx" style="display:none">
-      <details style="margin-top:12px">
-        <summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--navy)">Ver tokens disponíveis para o modelo</summary>
+      <details>
+        <summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--navy)">Ver tokens disponíveis para os modelos</summary>
         <div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Token</th><th>Preenchido com</th></tr></thead><tbody>${tokenRows}</tbody></table></div>
       </details>
     </div>
@@ -1343,11 +1486,38 @@ function renderFaturamentoTab(contract, client) {
       <div class="card-pad" style="padding-bottom:0"><div class="section-title">Status de cada marco</div></div>
       <div class="table-wrap" style="border:none">
         <table>
-          <thead><tr><th>Marco</th><th>Valor</th><th>Status</th><th>Liberação</th><th>BM enviado</th><th>BM aprovado</th><th>NF enviada</th><th>Pagamento</th><th>Ação</th></tr></thead>
-          <tbody>${rows || `<tr><td colspan="9" class="tbl-empty">Cadastre marcos na aba "Marcos de faturamento" primeiro.</td></tr>`}</tbody>
+          <thead><tr><th>Marco</th><th>Valor</th><th>Status</th><th>Liberação</th><th>BM enviado</th><th>Proforma enviada</th><th>Aprovado</th><th>NF enviada</th><th>Pagamento</th><th>Ação</th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="10" class="tbl-empty">Cadastre marcos na aba "Marcos de faturamento" primeiro.</td></tr>`}</tbody>
         </table>
       </div>
     </div>`;
+}
+
+function renderLinhasModal(billing, contract) {
+  const lines = contractLinesForContract(contract.id);
+  const current = {};
+  (billing.linhas || []).forEach(l => current[l.lineId] = l.quantidade);
+
+  const rows = lines.map(l => `
+    <tr>
+      <td><strong>${escapeHtml(l.codigo||'')}</strong></td>
+      <td>${escapeHtml(l.descricao||'')}</td>
+      <td class="muted">${escapeHtml(l.unidade||'')}</td>
+      <td class="mono">${formatCurrency(l.precoUnitario, contract.moeda)}</td>
+      <td style="width:110px"><input type="number" step="0.01" min="0" value="${current[l.id] || ''}" data-line-qty="${l.id}" placeholder="0"></td>
+    </tr>`).join('');
+
+  openModal(`
+    <div class="modal-head"><h3>Linhas do marco ${escapeHtml(billing.codigo)}</h3><button class="icon-btn" id="btnCloseLinhas">${icon('x')}</button></div>
+    <div class="modal-body">
+      <p class="help" style="margin-top:0">Informe a quantidade lançada de cada item de preço nesta rodada de faturamento. Itens com quantidade 0 ou em branco não aparecem no BM/Proforma gerados.</p>
+      ${lines.length ? `<div class="table-wrap"><table><thead><tr><th>Item</th><th>Descrição</th><th>Unidade</th><th>Preço unit.</th><th>Qtd. neste marco</th></tr></thead><tbody>${rows}</tbody></table></div>`
+        : `<div class="tbl-empty">Nenhum item de preço cadastrado ainda. Adicione itens na aba "Marcos de faturamento".</div>`}
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="btnCancelLinhas">Cancelar</button>
+      <button class="btn btn-primary" id="btnSaveLinhas">${icon('check')}Salvar</button>
+    </div>`);
 }
 /* ---------- inline contract edit form (Ficha tab) ---------- */
 function renderContractFormInline(contract) {
@@ -1435,9 +1605,12 @@ async function deleteContract(contract) {
     if (b.custoRealizadoFilePath) await deleteFileFromStorage(b.custoRealizadoFilePath);
   }
   if (contract.bmTemplatePath) await deleteFileFromStorage(contract.bmTemplatePath);
+  if (contract.proformaTemplatePath) await deleteFileFromStorage(contract.proformaTemplatePath);
   DB.billings = DB.billings.filter(b => b.contractId !== contract.id);
+  DB.contractLines = DB.contractLines.filter(l => l.contractId !== contract.id);
   DB.contracts = DB.contracts.filter(c => c.id !== contract.id);
   await dbSave('billings');
+  await dbSave('contractLines');
   await dbSave('contracts');
 }
 
@@ -1451,6 +1624,21 @@ function wireContractDetailEvents(contract, tab) {
       if (aditivoBtn) aditivoBtn.addEventListener('click', () => openAditivoModal(contract.id));
       const delBtn = document.getElementById('btnDeleteContract');
       if (delBtn) delBtn.addEventListener('click', () => confirmDeleteContract(contract));
+      const exportBtn = document.getElementById('btnExportFicha');
+      if (exportBtn) exportBtn.addEventListener('click', async () => {
+        const client = getClient(contract.clientCnpj);
+        exportBtn.disabled = true;
+        exportBtn.innerHTML = `<span class="spinner"></span> Gerando…`;
+        try {
+          const fileName = await generateFichaDocx(client, contract);
+          toast('Ficha exportada: ' + fileName, 'ok');
+        } catch (err) {
+          toast('Erro ao gerar o Word: ' + (err.message || err), 'err');
+        } finally {
+          exportBtn.disabled = false;
+          exportBtn.innerHTML = `${icon('download')}Exportar Word`;
+        }
+      });
     } else {
       document.getElementById('btnCancelEdit').addEventListener('click', () => { ficheEditMode = false; render(); });
       document.getElementById('fichaEditForm').addEventListener('submit', async (e) => {
@@ -1537,10 +1725,40 @@ function wireContractDetailEvents(contract, tab) {
       const bs = billingsForContract(contract.id);
       DB.billings.push({
         id: uid('bm'), contractId: contract.id, codigo: 'BM' + (bs.length + 1),
-        descricao: '', percentual: '', valor: 0, gatilho: '', dataPrevisao: '', origin: 'manual',
+        descricao: '', percentual: '', valor: 0, gatilho: '', dataPrevisao: '', origin: 'manual', linhas: [],
         releasedDate: '', bmGeneratedDate: '', bmSentDate: '', bmApprovedDate: '', nfSentDate: '', paymentDate: '',
       });
       await dbSave('billings');
+      render();
+    });
+
+    document.querySelectorAll('[data-lfield]').forEach(el => {
+      el.addEventListener('change', async () => {
+        const l = DB.contractLines.find(x => x.id === el.dataset.lid);
+        if (!l) return;
+        const field = el.dataset.lfield;
+        l[field] = field === 'precoUnitario' ? Number(el.value) || 0 : el.value;
+        await dbSave('contractLines');
+        toast('Item atualizado.', 'ok');
+      });
+    });
+    document.querySelectorAll('[data-del-line]').forEach(el => {
+      el.addEventListener('click', async () => {
+        if (!confirm('Remover este item de preço? Marcos que já usam essa linha vão perder a referência.')) return;
+        DB.contractLines = DB.contractLines.filter(l => l.id !== el.dataset.delLine);
+        await dbSave('contractLines');
+        toast('Item removido.', 'ok');
+        render();
+      });
+    });
+    const addLineBtn = document.getElementById('btnAddLine');
+    if (addLineBtn) addLineBtn.addEventListener('click', async () => {
+      const lines = contractLinesForContract(contract.id);
+      DB.contractLines.push({
+        id: uid('ln'), contractId: contract.id, codigo: String(lines.length + 1),
+        descricao: '', unidade: '', precoUnitario: 0,
+      });
+      await dbSave('contractLines');
       render();
     });
   }
@@ -1563,7 +1781,7 @@ function wireContractDetailEvents(contract, tab) {
         if (!b) return;
         b.releasedDate = todayISO();
         await dbSave('billings');
-        toast('Faturamento liberado. Já pode gerar o BM.', 'ok');
+        toast('Faturamento liberado. Já pode gerar o BM e a Proforma.', 'ok');
         render();
       });
     });
@@ -1582,34 +1800,71 @@ function wireContractDetailEvents(contract, tab) {
         }
       });
     });
+    document.querySelectorAll('[data-genproforma]').forEach(el => {
+      el.addEventListener('click', async () => {
+        const b = DB.billings.find(x => x.id === el.dataset.genproforma);
+        if (!b) return;
+        try {
+          const fileName = await generateProformaFile(client, contract, b);
+          if (!b.proformaGeneratedDate) b.proformaGeneratedDate = todayISO();
+          await dbSave('billings');
+          toast('Proforma gerada: ' + fileName, 'ok');
+          render();
+        } catch (err) {
+          toast(err.message || 'Erro ao gerar a Proforma.', 'err');
+        }
+      });
+    });
+    document.querySelectorAll('[data-edit-linhas]').forEach(el => {
+      el.addEventListener('click', () => {
+        const b = DB.billings.find(x => x.id === el.dataset.editLinhas);
+        if (!b) return;
+        renderLinhasModal(b, contract);
+        document.getElementById('btnCloseLinhas').addEventListener('click', closeModal);
+        document.getElementById('btnCancelLinhas').addEventListener('click', closeModal);
+        document.getElementById('btnSaveLinhas').addEventListener('click', async () => {
+          const linhas = [];
+          document.querySelectorAll('[data-line-qty]').forEach(input => {
+            const qty = Number(input.value) || 0;
+            if (qty > 0) linhas.push({ lineId: input.dataset.lineQty, quantidade: qty });
+          });
+          b.linhas = linhas;
+          await dbSave('billings');
+          closeModal();
+          toast('Linhas do marco atualizadas.', 'ok');
+          render();
+        });
+      });
+    });
 
-    const templateInput = document.getElementById('templateInput');
-    const wireTemplateUpload = () => {
-      if (!templateInput) return;
-      templateInput.addEventListener('change', async () => {
-        const file = templateInput.files[0];
+    function wireTemplateUploadFor(kind, dropId, inputId, replaceId, urlField, pathField, nameField, storageFolder) {
+      const input = document.getElementById(inputId);
+      if (!input) return;
+      input.addEventListener('change', async () => {
+        const file = input.files[0];
         if (!file) return;
         try {
           toast('Enviando modelo…', 'ok');
-          if (contract.bmTemplatePath) await deleteFileFromStorage(contract.bmTemplatePath);
-          const path = `bm-templates/${contract.id}/${Date.now()}-${file.name}`;
+          if (contract[pathField]) await deleteFileFromStorage(contract[pathField]);
+          const path = `${storageFolder}/${contract.id}/${Date.now()}-${file.name}`;
           const { url } = await uploadFileToStorage(path, file);
-          contract.bmTemplateUrl = url;
-          contract.bmTemplatePath = path;
-          contract.bmTemplateName = file.name;
+          contract[urlField] = url;
+          contract[pathField] = path;
+          contract[nameField] = file.name;
           await dbSave('contracts');
-          toast('Modelo de BM cadastrado.', 'ok');
+          toast('Modelo de ' + kind + ' cadastrado.', 'ok');
           render();
         } catch (err) {
           toast('Erro ao enviar o modelo: ' + (err.message || err), 'err');
         }
       });
-    };
-    const dropZone = document.getElementById('templateDrop');
-    if (dropZone) dropZone.addEventListener('click', () => templateInput.click());
-    const replaceBtn = document.getElementById('btnReplaceTemplate');
-    if (replaceBtn) replaceBtn.addEventListener('click', () => templateInput.click());
-    wireTemplateUpload();
+      const dropZone = document.getElementById(dropId);
+      if (dropZone) dropZone.addEventListener('click', () => input.click());
+      const replaceBtn = document.getElementById(replaceId);
+      if (replaceBtn) replaceBtn.addEventListener('click', () => input.click());
+    }
+    wireTemplateUploadFor('BM', 'templateDrop', 'templateInput', 'btnReplaceTemplate', 'bmTemplateUrl', 'bmTemplatePath', 'bmTemplateName', 'bm-templates');
+    wireTemplateUploadFor('Proforma', 'proformaTemplateDrop', 'proformaTemplateInput', 'btnReplaceProformaTemplate', 'proformaTemplateUrl', 'proformaTemplatePath', 'proformaTemplateName', 'proforma-templates');
   }
 }
 /* ---------- ADITIVOS (contract amendments) ---------- */
@@ -1840,7 +2095,7 @@ async function applyAditivo() {
       id, contractId: contract.id, codigo: m.codigo || ('BM'+(billingsForContract(contract.id).length+1)),
       descricao: m.descricao || '', percentual: m.percentual || '', valor: Number(m.valor)||0,
       gatilho: m.gatilho || '', dataPrevisao: m.dataPrevisao || '', origin: log.id,
-      releasedDate: '', bmGeneratedDate: '', bmSentDate: '', bmApprovedDate: '', nfSentDate: '', paymentDate: '',
+      releasedDate: '', bmGeneratedDate: '', bmSentDate: '', proformaSentDate: '', proformaGeneratedDate: '', bmApprovedDate: '', nfSentDate: '', paymentDate: '', linhas: [],
     });
     log.milestonesAdded.push(id);
   });
@@ -2072,6 +2327,156 @@ function openInviteModal() {
       toast('Erro ao enviar convite: ' + (err.message||err), 'err');
     }
   });
+}
+/* ---------- FICHA DO CONTRATO EM WORD (.docx) ---------- */
+const FICHA_NAVY = '004A64';
+const FICHA_LIGHT = '80A5B2';
+const FICHA_WHITE = 'FFFFFF';
+
+function fichaBorders() {
+  const { BorderStyle } = docx;
+  const side = { style: BorderStyle.SINGLE, size: 4, color: FICHA_LIGHT };
+  return { top: side, bottom: side, left: side, right: side, insideHorizontal: side, insideVertical: side };
+}
+
+function fichaCell(text, opts) {
+  opts = opts || {};
+  const { TableCell, Paragraph, TextRun, WidthType, VerticalAlign, ShadingType } = docx;
+  return new TableCell({
+    width: opts.width ? { size: opts.width, type: WidthType.PERCENTAGE } : undefined,
+    columnSpan: opts.colSpan,
+    verticalAlign: VerticalAlign.CENTER,
+    shading: opts.fill ? { fill: opts.fill, type: ShadingType.CLEAR, color: 'auto' } : undefined,
+    margins: { top: 80, bottom: 80, left: 100, right: 100 },
+    children: [new Paragraph({
+      alignment: opts.center ? docx.AlignmentType.CENTER : undefined,
+      children: [new TextRun({ text: text || '—', bold: !!opts.bold, color: opts.color || undefined, size: opts.size || 20 })],
+    })],
+  });
+}
+
+function fichaBannerRow(text) {
+  const { TableRow } = docx;
+  return new TableRow({ children: [fichaCell(text, { colSpan: 6, fill: FICHA_NAVY, bold: true, color: FICHA_WHITE, center: true, size: 24 })] });
+}
+
+function fichaLabelRow(label, value, opts) {
+  const { TableRow } = docx;
+  opts = opts || {};
+  return new TableRow({ children: [
+    fichaCell(label, { width: 28, fill: FICHA_LIGHT, bold: true }),
+    fichaCell(value, { width: 72, colSpan: opts.colSpan || 5 }),
+  ]});
+}
+
+function fichaTwoColRow(l1, v1, l2, v2) {
+  const { TableRow } = docx;
+  return new TableRow({ children: [
+    fichaCell(l1, { width: 14, fill: FICHA_LIGHT, bold: true }),
+    fichaCell(v1, { width: 36 }),
+    fichaCell(l2, { width: 14, fill: FICHA_LIGHT, bold: true }),
+    fichaCell(v2, { width: 36 }),
+  ]});
+}
+
+async function generateFichaDocx(client, contract) {
+  const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, HeadingLevel } = docx;
+  const lines = contractLinesForContract(contract.id);
+  const billings = billingsForContract(contract.id);
+  const ubs = (contract.unidadeNegocio || []).join(', ') || '—';
+
+  const rows = [
+    fichaBannerRow('FICHA DE PASSAGEM DE SERVIÇO COMERCIAL'),
+    fichaLabelRow('Cliente', (client ? client.nome : '—') + (client ? ' — CNPJ ' + formatCNPJ(client.cnpj) : '')),
+    fichaLabelRow('Empresa OceanPact (contratada)', (contract.fornecedorNome || '—') + (contract.fornecedorCnpj ? ' — CNPJ ' + formatCNPJ(contract.fornecedorCnpj) : '')),
+    fichaTwoColRow('Nº Contrato', contract.numero || '—', 'Proposta', contract.propostaRef || '—'),
+    fichaTwoColRow('Data assinatura', formatDate(contract.dataAssinatura), 'Início / Término', formatDate(contract.dataInicio) + ' — ' + (contract.dataTermino ? formatDate(contract.dataTermino) : 'em aberto')),
+    fichaTwoColRow('Moeda', contract.moeda || '—', 'Valor total', formatCurrency(contract.valorTotal, contract.moeda)),
+    fichaTwoColRow('Medição', contract.medicao || '—', 'Prazo de pagamento', (contract.prazoPagamentoDias ? contract.prazoPagamentoDias + ' dias' : '—')),
+    fichaLabelRow('Unidade de negócio', ubs),
+    fichaLabelRow('Escopo', contract.escopo || '—'),
+    fichaLabelRow('Reembolso', contract.reembolso || '—'),
+    fichaLabelRow('Cláusula de reajuste', contract.clausulaReajuste || '—'),
+    fichaLabelRow('Cláusula de cancelamento', contract.clausulaCancelamento || '—'),
+    fichaLabelRow('Subcontratação', contract.subcontratacao || '—'),
+    fichaLabelRow('Riscos e pontos de atenção', contract.riscos || '—'),
+    fichaLabelRow('Observações', contract.observacoes || '—'),
+  ];
+
+  const mainTable = new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, borders: fichaBorders(), rows });
+
+  const children = [
+    new Paragraph({ text: '', spacing: { after: 100 } }),
+    mainTable,
+    new Paragraph({ text: '', spacing: { after: 200 } }),
+  ];
+
+  // Planilha de preços
+  if (lines.length) {
+    const priceHeader = new TableRow({ children: [
+      fichaCell('Item', { width: 8, fill: FICHA_LIGHT, bold: true, center: true }),
+      fichaCell('Descrição', { width: 46, fill: FICHA_LIGHT, bold: true, center: true }),
+      fichaCell('Unidade', { width: 16, fill: FICHA_LIGHT, bold: true, center: true }),
+      fichaCell('Preço Unitário (R$)', { width: 30, fill: FICHA_LIGHT, bold: true, center: true }),
+    ]});
+    const priceRows = lines.map(l => new TableRow({ children: [
+      fichaCell(l.codigo || '', { width: 8, center: true }),
+      fichaCell(l.descricao || '', { width: 46 }),
+      fichaCell(l.unidade || '', { width: 16, center: true }),
+      fichaCell(l.precoUnitario ? Number(l.precoUnitario).toLocaleString('pt-BR', {minimumFractionDigits:2}) : '—', { width: 30, center: true }),
+    ]}));
+    children.push(new Paragraph({ children: [new TextRun({ text: 'Planilha de Preços', bold: true, color: FICHA_NAVY, size: 24 })], spacing: { after: 120 } }));
+    children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, borders: fichaBorders(), rows: [priceHeader, ...priceRows] }));
+    children.push(new Paragraph({ text: '', spacing: { after: 200 } }));
+  }
+
+  // Marcos de faturamento
+  if (billings.length) {
+    const bmHeader = new TableRow({ children: [
+      fichaCell('Marco', { width: 8, fill: FICHA_LIGHT, bold: true, center: true }),
+      fichaCell('%', { width: 8, fill: FICHA_LIGHT, bold: true, center: true }),
+      fichaCell('Valor (R$)', { width: 16, fill: FICHA_LIGHT, bold: true, center: true }),
+      fichaCell('O que libera o faturamento', { width: 52, fill: FICHA_LIGHT, bold: true, center: true }),
+      fichaCell('Data prevista', { width: 16, fill: FICHA_LIGHT, bold: true, center: true }),
+    ]});
+    const bmRows = billings.map(b => new TableRow({ children: [
+      fichaCell(b.codigo || '', { width: 8, center: true, bold: true }),
+      fichaCell(b.percentual || '', { width: 8, center: true }),
+      fichaCell(b.valor ? Number(b.valor).toLocaleString('pt-BR', {minimumFractionDigits:2}) : '—', { width: 16, center: true }),
+      fichaCell(b.gatilho || '', { width: 52, size: 18 }),
+      fichaCell(b.dataPrevisao || '—', { width: 16, center: true }),
+    ]}));
+    const totalPct = billings.reduce((s,b)=>{ const n = parseFloat((b.percentual||'').replace('%','').replace(',','.')); return s + (isNaN(n)?0:n); }, 0);
+    const totalVal = billings.reduce((s,b)=> s + (Number(b.valor)||0), 0);
+    const totalRow = new TableRow({ children: [
+      fichaCell('TOTAL', { width: 8, fill: FICHA_LIGHT, bold: true, center: true }),
+      fichaCell(totalPct ? totalPct + '%' : '—', { width: 8, fill: FICHA_LIGHT, bold: true, center: true }),
+      fichaCell(totalVal.toLocaleString('pt-BR', {minimumFractionDigits:2}), { width: 16, fill: FICHA_LIGHT, bold: true, center: true }),
+      fichaCell('', { width: 52, fill: FICHA_LIGHT }),
+      fichaCell('', { width: 16, fill: FICHA_LIGHT }),
+    ]});
+    children.push(new Paragraph({ children: [new TextRun({ text: 'Marcos de Faturamento', bold: true, color: FICHA_NAVY, size: 24 })], spacing: { after: 120 } }));
+    children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, borders: fichaBorders(), rows: [bmHeader, ...bmRows, totalRow] }));
+  }
+
+  children.push(new Paragraph({ text: '', spacing: { before: 300 } }));
+  children.push(new Paragraph({ children: [new TextRun({ text: 'Documento gerado automaticamente pelo sistema Contratos OCP em ' + formatDate(todayISO()) + '.', italics: true, size: 16, color: '5B7480' })] }));
+
+  const doc = new Document({
+    styles: {
+      default: { document: { run: { font: 'Arial', size: 20 } } },
+    },
+    sections: [{ properties: {}, children }],
+  });
+
+  const blob = await Packer.toBlob(doc);
+  const fileName = 'Ficha_' + (contract.numero || contract.id).toString().replace(/[^\w-]/g, '') + '.docx';
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = fileName;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  return fileName;
 }
 /* ---------- NOVO CONTRATO WIZARD ---------- */
 let wizard = null;
@@ -2507,8 +2912,8 @@ async function saveWizardContract() {
   d.marcos.forEach(m => {
     DB.billings.push({
       id: uid('bm'), contractId, codigo: m.codigo, descricao: m.descricao, percentual: m.percentual,
-      valor: m.valor, gatilho: m.gatilho, dataPrevisao: m.dataPrevisao, origin: 'original',
-      releasedDate: '', bmGeneratedDate: '', bmSentDate: '', bmApprovedDate: '', nfSentDate: '', paymentDate: '',
+      valor: m.valor, gatilho: m.gatilho, dataPrevisao: m.dataPrevisao, origin: 'original', linhas: [],
+      releasedDate: '', bmGeneratedDate: '', bmSentDate: '', proformaSentDate: '', proformaGeneratedDate: '', bmApprovedDate: '', nfSentDate: '', paymentDate: '',
     });
   });
   await dbSave('billings');

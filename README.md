@@ -100,6 +100,20 @@ git push -u origin main
 
 Acesse a URL do Netlify, entre com o e-mail/senha do primeiro admin (passo 6), vá em **Administração** na barra lateral e comece a convidar o resto da equipe.
 
+## Itens de preço, Proforma e marcos com múltiplas linhas
+
+Cada contrato agora tem, na aba **Marcos de faturamento**, um catálogo de **Itens de preço** (igual ao Anexo E — item, descrição, unidade, preço unitário). Em **Gerenciar faturamento**, cada marco tem um botão **"Linhas"** onde você informa a quantidade lançada de cada item **naquela rodada específica** — útil quando um mesmo BM cobre mais de uma linha de medição (ex.: um marco percentual simples + itens de day-rate do período).
+
+Além do modelo de BM, agora dá para cadastrar também um **modelo de Proforma** (mesma lógica de tokens). Ambos os modelos podem ter até 10 "slots" de linha usando os tokens `{{LINHA1_...}}` até `{{LINHA10_...}}` (descrição, unidade, quantidade, valor unitário, código) — o sistema preenche um slot para cada item lançado naquele marco, na ordem, e deixa os slots não usados em branco (o que zera o total daquela linha na fórmula, sem precisar apagar a linha da planilha).
+
+Um modelo de Proforma pronto (baseado no formato que você já usa) está disponível como exemplo: veja o arquivo `Modelo_Proforma_TOKENS.xlsx` te enviado — é só ajustar o que quiser e subir na aba Gerenciar Faturamento do contrato.
+
+**Depois de atualizar o site, publique de novo as regras do Firestore** (arquivo `firestore.rules` deste zip) — foi criada uma nova coleção (`contractLines`) que precisa de permissão.
+
+## Exportar a Ficha do contrato em Word
+
+Na aba **Ficha do contrato**, o botão "Exportar Word" gera um .docx com o mesmo padrão visual usado no modelo original (banner azul escuro, tabelas com o azul claro da OceanPact), preenchido com os dados atuais do contrato, a Planilha de Preços e os Marcos de Faturamento. É gerado direto no navegador — não precisa de nenhum modelo cadastrado nem de servidor. Como é uma versão gerada por código (não uma cópia exata do arquivo Word original), alguns campos muito específicos do modelo original (como os links de anexo e o logo em imagem) não aparecem — mas todo o conteúdo de dados está lá.
+
 ## Perguntas comuns
 
 **A pessoa não recebeu o e-mail de convite.** Confira a caixa de spam. O remetente é algo como `noreply@SEU-PROJETO.firebaseapp.com` — pode demorar 1–2 minutos. Se quiser, use "Reenviar convite" na página de Administração.
