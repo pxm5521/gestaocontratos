@@ -707,7 +707,7 @@ async function callClaudeViaFunction(system, userContent) {
   const response = await fetch('/api/claude-extract', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ system, userContent, maxTokens: 4096 }),
+    body: JSON.stringify({ system, userContent, maxTokens: 3200 }),
   });
   let data;
   try { data = await response.json(); }
@@ -3001,16 +3001,30 @@ function isValidRange(r) { return r && r.start && r.end && r.end >= r.start; }
 
 async function proceedToAnalysis() {
   const validRanges = wizard.includeRanges.filter(isValidRange);
-  let text = validRanges.length ? buildTextFromIncludedPages(wizard.pages, validRanges) : wizard.pages.join('\n\n');
+  let baseText = validRanges.length ? buildTextFromIncludedPages(wizard.pages, validRanges) : '';
 
-  if (isValidRange(wizard.pricingPages)) {
-    text += '\n\n=== TABELA DE PREÇOS DO CONTRATO (páginas ' + wizard.pricingPages.start + '-' + wizard.pricingPages.end + ', indicadas pelo usuário) ===\n' +
-      buildTextFromIncludedPages(wizard.pages, [wizard.pricingPages]);
+  let pricingText = '', milestoneText = '';
+  if (isValidRange(wizard.pricingPages)) pricingText = buildTextFromIncludedPages(wizard.pages, [wizard.pricingPages]);
+  if (isValidRange(wizard.milestonePages)) milestoneText = buildTextFromIncludedPages(wizard.pages, [wizard.milestonePages]);
+
+  // Se o usuário não indicou nada específico, cai no documento inteiro (o fallback
+  // automático de trimForModel entra em ação depois, se ainda for muito grande).
+  if (!validRanges.length && !pricingText && !milestoneText) baseText = wizard.pages.join('\n\n');
+
+  // Teto de segurança: as páginas de preços/marcos indicadas pelo usuário SEMPRE
+  // entram inteiras (são o mais importante); as "outras páginas" gerais são
+  // cortadas (início + fim) se a soma ficar grande demais, para a análise não
+  // estourar o tempo máximo da função.
+  const SAFE_CAP = 70000;
+  const remainingBudget = Math.max(SAFE_CAP - pricingText.length - milestoneText.length, 8000);
+  if (baseText.length > remainingBudget) {
+    const half = Math.floor(remainingBudget / 2);
+    baseText = baseText.slice(0, half) + '\n\n[... trecho omitido para caber no limite de análise ...]\n\n' + baseText.slice(-half);
   }
-  if (isValidRange(wizard.milestonePages)) {
-    text += '\n\n=== MARCOS DE FATURAMENTO DO CONTRATO (páginas ' + wizard.milestonePages.start + '-' + wizard.milestonePages.end + ', indicadas pelo usuário) ===\n' +
-      buildTextFromIncludedPages(wizard.pages, [wizard.milestonePages]);
-  }
+
+  let text = baseText;
+  if (pricingText) text += '\n\n=== TABELA DE PREÇOS DO CONTRATO (páginas ' + wizard.pricingPages.start + '-' + wizard.pricingPages.end + ', indicadas pelo usuário) ===\n' + pricingText;
+  if (milestoneText) text += '\n\n=== MARCOS DE FATURAMENTO DO CONTRATO (páginas ' + wizard.milestonePages.start + '-' + wizard.milestonePages.end + ', indicados pelo usuário) ===\n' + milestoneText;
 
   wizard.awaitingPageSelection = false;
   wizard.step = 2;
