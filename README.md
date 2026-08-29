@@ -112,6 +112,8 @@ Um modelo de Proforma pronto (baseado no formato que você já usa) está dispon
 
 **Depois de atualizar o site, publique de novo as regras do Firestore** (arquivo `firestore.rules` deste zip) — foi criada uma nova coleção (`contractLines`) que precisa de permissão.
 
+**Gerar BM/Proforma sem marco**: na aba Gerenciar Faturamento tem um botão "Gerar BM / Proforma avulso" que não depende de nenhum marco cadastrado — você escolhe os itens de preço e quantidades na hora e gera o documento direto. Diferente da geração por marco, esse avulso não fica registrado no funil de status (liberado/enviado/aprovado/pago) — é só para gerar o arquivo rapidamente.
+
 ## Exportar a Ficha do contrato em Word
 
 Na aba **Ficha do contrato**, o botão "Exportar Word" gera um .docx com o mesmo padrão visual usado no modelo original (banner azul escuro, tabelas com o azul claro da OceanPact), preenchido com os dados atuais do contrato, a Planilha de Preços e os Marcos de Faturamento. É gerado direto no navegador — não precisa de nenhum modelo cadastrado nem de servidor. Como é uma versão gerada por código (não uma cópia exata do arquivo Word original), alguns campos muito específicos do modelo original (como os links de anexo e o logo em imagem) não aparecem — mas todo o conteúdo de dados está lá.

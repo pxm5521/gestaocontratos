@@ -421,6 +421,7 @@ const PLACEHOLDER_TOKENS = [
   ['{{MOEDA}}', 'Moeda do contrato'],
   ['{{ESCOPO}}', 'Escopo/descrição do serviço do contrato'],
   ['{{MARCO_CODIGO}}', 'Código do marco (ex. BM1)'],
+  ['{{MARCO_NUMERO}}', 'Só o número do marco (ex. "1" para BM1)'],
   ['{{MARCO_DESCRICAO}}', 'Descrição do marco'],
   ['{{MARCO_GATILHO}}', 'Condição de liberação do marco'],
   ['{{MARCO_PERCENTUAL}}', 'Percentual do marco'],
@@ -894,11 +895,12 @@ function buildTokenMap(client, contract, billing) {
     '{{MOEDA}}': contract.moeda || '',
     '{{ESCOPO}}': contract.escopo || '',
     '{{MARCO_CODIGO}}': billing.codigo || '',
+    '{{MARCO_NUMERO}}': numMatch ? numMatch[0] : '',
     '{{MARCO_DESCRICAO}}': billing.descricao || '',
     '{{MARCO_GATILHO}}': billing.gatilho || '',
     '{{MARCO_PERCENTUAL}}': billing.percentual || '',
     '{{MARCO_VALOR}}': billing.valor ? Number(billing.valor).toLocaleString('pt-BR', {minimumFractionDigits:2}) : '',
-    '{{PERIODO_MEDICAO}}': ordinal + ' Marco (' + (billing.codigo || '') + ')',
+    '{{PERIODO_MEDICAO}}': billing.codigo === 'AVULSO' ? (billing.descricao || 'Faturamento avulso') : ordinal + ' Marco (' + (billing.codigo || '') + ')',
     '{{PROFORMA_NUMERO}}': (contract.proformaCounter || 0) + 1,
     '{{DATA_LIBERACAO}}': formatDate(billing.releasedDate),
     '{{DATA_GERACAO}}': formatDate(todayISO()),
@@ -1607,9 +1609,7 @@ function renderFaturamentoTab(contract, client) {
       <td style="min-width:160px">
         <div style="display:flex;flex-direction:column;gap:4px">
           ${!b.releasedDate ? `<button class="btn btn-accent btn-sm btn-block" data-release="${b.id}">${icon('bolt')}Liberar</button>` : ''}
-          ${b.releasedDate ? `<button class="btn btn-outline btn-sm btn-block" data-edit-linhas="${b.id}">${icon('edit')}Linhas${linhasCount ? ' ('+linhasCount+')' : ''}</button>` : ''}
-          ${b.releasedDate ? `<button class="btn btn-outline btn-sm btn-block" data-genbm="${b.id}" ${!hasBmTemplate ? 'disabled title="Cadastre o modelo de BM abaixo"' : ''}>${icon('sheet')}Gerar BM</button>` : ''}
-          ${b.releasedDate ? `<button class="btn btn-outline btn-sm btn-block" data-genproforma="${b.id}" ${!hasProformaTemplate ? 'disabled title="Cadastre o modelo de Proforma abaixo"' : ''}>${icon('sheet')}Gerar Proforma</button>` : ''}
+          ${b.releasedDate ? `<button class="btn btn-primary btn-sm btn-block" data-open-gen="${b.id}">${icon('sheet')}Gerar BM / Proforma${linhasCount ? ' ('+linhasCount+' itens)' : ''}</button>` : ''}
         </div>
       </td>
     </tr>`;
@@ -1628,6 +1628,13 @@ function renderFaturamentoTab(contract, client) {
         <div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Token</th><th>Preenchido com</th></tr></thead><tbody>${tokenRows}</tbody></table></div>
       </details>
     </div>
+    <div class="card card-pad" style="margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <div>
+        <div class="section-title" style="margin-bottom:4px">Gerar sem vincular a um marco</div>
+        <p class="help" style="margin:0">Fature direto pelos itens de preço, sem passar por um marco específico — útil para cobranças avulsas ou que não seguem o cronograma de marcos.</p>
+      </div>
+      <button class="btn btn-outline" id="btnOpenStandaloneGen">${icon('sheet')}Gerar BM / Proforma avulso</button>
+    </div>
     <div class="card">
       <div class="card-pad" style="padding-bottom:0"><div class="section-title">Status de cada marco</div></div>
       <div class="table-wrap" style="border:none">
@@ -1639,10 +1646,13 @@ function renderFaturamentoTab(contract, client) {
     </div>`;
 }
 
-function renderLinhasModal(billing, contract) {
+function renderLinhasModal(billing, contract, client, opts) {
+  opts = opts || {};
   const lines = contractLinesForContract(contract.id);
   const current = {};
   (billing.linhas || []).forEach(l => current[l.lineId] = l.quantidade);
+  const hasBm = !!contract.bmTemplateUrl;
+  const hasProforma = !!contract.proformaTemplateUrl;
 
   const rows = lines.map(l => `
     <tr>
@@ -1653,16 +1663,25 @@ function renderLinhasModal(billing, contract) {
       <td style="width:110px"><input type="number" step="0.01" min="0" value="${current[l.id] || ''}" data-line-qty="${l.id}" placeholder="0"></td>
     </tr>`).join('');
 
+  const title = opts.standalone ? 'Gerar BM / Proforma avulso' : 'Gerar BM / Proforma — Marco ' + escapeHtml(billing.codigo);
+  const refField = opts.standalone ? `
+      <div class="field"><label>Referência deste faturamento (aparece no lugar do código/descrição do marco no documento)</label>
+        <input type="text" id="standaloneRef" placeholder="ex.: Faturamento avulso — Maio/2026" value="${escapeHtml(billing.descricao||'')}">
+      </div>` : '';
+
   openModal(`
-    <div class="modal-head"><h3>Linhas do marco ${escapeHtml(billing.codigo)}</h3><button class="icon-btn" id="btnCloseLinhas">${icon('x')}</button></div>
+    <div class="modal-head"><h3>${title}</h3><button class="icon-btn" id="btnCloseLinhas">${icon('x')}</button></div>
     <div class="modal-body">
-      <p class="help" style="margin-top:0">Informe a quantidade lançada de cada item de preço nesta rodada de faturamento. Itens com quantidade 0 ou em branco não aparecem no BM/Proforma gerados.</p>
-      ${lines.length ? `<div class="table-wrap"><table><thead><tr><th>Item</th><th>Descrição</th><th>Unidade</th><th>Preço unit.</th><th>Qtd. neste marco</th></tr></thead><tbody>${rows}</tbody></table></div>`
+      ${refField}
+      <p class="help" style="margin-top:0">Escolha quais itens de preço entram ${opts.standalone ? 'neste faturamento' : 'nesta rodada de faturamento'} e a quantidade de cada um. Itens com quantidade 0 ou em branco não aparecem no documento gerado.</p>
+      ${lines.length ? `<div class="table-wrap"><table><thead><tr><th>Item</th><th>Descrição</th><th>Unidade</th><th>Preço unit.</th><th>Qtd.</th></tr></thead><tbody>${rows}</tbody></table></div>`
         : `<div class="tbl-empty">Nenhum item de preço cadastrado ainda. Adicione itens na aba "Marcos de faturamento".</div>`}
+      <div id="linhasModalMsg" class="help" style="margin-top:12px"></div>
     </div>
     <div class="modal-foot">
-      <button class="btn btn-ghost" id="btnCancelLinhas">Cancelar</button>
-      <button class="btn btn-primary" id="btnSaveLinhas">${icon('check')}Salvar</button>
+      <button class="btn btn-ghost" id="btnCloseLinhas2">Fechar</button>
+      <button class="btn btn-outline" id="btnGenProformaModal" ${!hasProforma ? 'disabled title="Cadastre o modelo de Proforma abaixo"' : ''}>${icon('sheet')}Gerar Proforma</button>
+      <button class="btn btn-primary" id="btnGenBmModal" ${!hasBm ? 'disabled title="Cadastre o modelo de BM abaixo"' : ''}>${icon('sheet')}Gerar BM</button>
     </div>`);
 }
 /* ---------- inline contract edit form (Ficha tab) ---------- */
@@ -1931,56 +1950,83 @@ function wireContractDetailEvents(contract, tab) {
         render();
       });
     });
-    document.querySelectorAll('[data-genbm]').forEach(el => {
-      el.addEventListener('click', async () => {
-        const b = DB.billings.find(x => x.id === el.dataset.genbm);
-        if (!b) return;
-        try {
-          const fileName = await generateBmFile(client, contract, b);
-          if (!b.bmGeneratedDate) b.bmGeneratedDate = todayISO();
-          await dbSave('billings');
-          toast('BM gerado: ' + fileName, 'ok');
-          render();
-        } catch (err) {
-          toast(err.message || 'Erro ao gerar o BM.', 'err');
-        }
-      });
-    });
-    document.querySelectorAll('[data-genproforma]').forEach(el => {
-      el.addEventListener('click', async () => {
-        const b = DB.billings.find(x => x.id === el.dataset.genproforma);
-        if (!b) return;
-        try {
-          const fileName = await generateProformaFile(client, contract, b);
-          if (!b.proformaGeneratedDate) b.proformaGeneratedDate = todayISO();
-          await dbSave('billings');
-          toast('Proforma gerada: ' + fileName, 'ok');
-          render();
-        } catch (err) {
-          toast(err.message || 'Erro ao gerar a Proforma.', 'err');
-        }
-      });
-    });
-    document.querySelectorAll('[data-edit-linhas]').forEach(el => {
-      el.addEventListener('click', () => {
-        const b = DB.billings.find(x => x.id === el.dataset.editLinhas);
-        if (!b) return;
-        renderLinhasModal(b, contract);
-        document.getElementById('btnCloseLinhas').addEventListener('click', closeModal);
-        document.getElementById('btnCancelLinhas').addEventListener('click', closeModal);
-        document.getElementById('btnSaveLinhas').addEventListener('click', async () => {
-          const linhas = [];
-          document.querySelectorAll('[data-line-qty]').forEach(input => {
-            const qty = Number(input.value) || 0;
-            if (qty > 0) linhas.push({ lineId: input.dataset.lineQty, quantidade: qty });
-          });
-          b.linhas = linhas;
-          await dbSave('billings');
-          closeModal();
-          toast('Linhas do marco atualizadas.', 'ok');
-          render();
+    function openGenModal(billing, opts) {
+      opts = opts || {};
+      const readLinhasFromModal = () => {
+        const linhas = [];
+        document.querySelectorAll('[data-line-qty]').forEach(input => {
+          const qty = Number(input.value) || 0;
+          if (qty > 0) linhas.push({ lineId: input.dataset.lineQty, quantidade: qty });
         });
+        return linhas;
+      };
+      const setModalMsg = (msg, isErr) => {
+        const el2 = document.getElementById('linhasModalMsg');
+        if (el2) { el2.textContent = msg || ''; el2.style.color = isErr ? 'var(--danger)' : 'var(--success)'; }
+      };
+      const applyLinhas = async () => {
+        billing.linhas = readLinhasFromModal();
+        if (opts.standalone) {
+          const refEl = document.getElementById('standaloneRef');
+          billing.descricao = (refEl && refEl.value.trim()) || 'Faturamento avulso';
+          billing.valor = billing.linhas.reduce((sum, l) => {
+            const line = contractLinesForContract(contract.id).find(cl => cl.id === l.lineId);
+            return sum + (line ? (Number(line.precoUnitario) || 0) * (Number(l.quantidade) || 0) : 0);
+          }, 0);
+        } else {
+          await dbSave('billings');
+        }
+      };
+
+      renderLinhasModal(billing, contract, client, opts);
+      document.getElementById('btnCloseLinhas').addEventListener('click', () => { render(); closeModal(); });
+      document.getElementById('btnCloseLinhas2').addEventListener('click', () => { render(); closeModal(); });
+      document.getElementById('btnGenBmModal').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> Gerando…`;
+        try {
+          await applyLinhas();
+          const fileName = await generateBmFile(client, contract, billing);
+          if (!opts.standalone) { if (!billing.bmGeneratedDate) billing.bmGeneratedDate = todayISO(); await dbSave('billings'); }
+          setModalMsg('BM gerado: ' + fileName, false);
+          toast('BM gerado: ' + fileName, 'ok');
+        } catch (err) {
+          setModalMsg(err.message || 'Erro ao gerar o BM.', true);
+          toast(err.message || 'Erro ao gerar o BM.', 'err');
+        } finally {
+          btn.disabled = false; btn.innerHTML = `${icon('sheet')}Gerar BM`;
+        }
       });
+      document.getElementById('btnGenProformaModal').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> Gerando…`;
+        try {
+          await applyLinhas();
+          const fileName = await generateProformaFile(client, contract, billing);
+          if (!opts.standalone) { if (!billing.proformaGeneratedDate) billing.proformaGeneratedDate = todayISO(); await dbSave('billings'); }
+          setModalMsg('Proforma gerada: ' + fileName, false);
+          toast('Proforma gerada: ' + fileName, 'ok');
+        } catch (err) {
+          setModalMsg(err.message || 'Erro ao gerar a Proforma.', true);
+          toast(err.message || 'Erro ao gerar a Proforma.', 'err');
+        } finally {
+          btn.disabled = false; btn.innerHTML = `${icon('sheet')}Gerar Proforma`;
+        }
+      });
+    }
+
+    document.querySelectorAll('[data-open-gen]').forEach(el => {
+      el.addEventListener('click', () => {
+        const b = DB.billings.find(x => x.id === el.dataset.openGen);
+        if (!b) return;
+        openGenModal(b, { standalone: false });
+      });
+    });
+
+    const standaloneBtn = document.getElementById('btnOpenStandaloneGen');
+    if (standaloneBtn) standaloneBtn.addEventListener('click', () => {
+      const fakeBilling = { codigo: 'AVULSO', descricao: '', gatilho: '', percentual: '', valor: 0, linhas: [], releasedDate: todayISO() };
+      openGenModal(fakeBilling, { standalone: true });
     });
 
     function wireTemplateUploadFor(kind, dropId, inputId, replaceId, urlField, pathField, nameField, storageFolder) {
