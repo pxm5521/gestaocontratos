@@ -1,0 +1,42 @@
+rules_version = '2';
+
+// Modelo de acesso: só quem tem um documento em /members com status
+// "ativo" pode ler/gravar os dados do sistema. Quem tem role "admin"
+// também pode gerenciar a coleção /members (convidar, mudar papel,
+// revogar acesso). O documento de members é identificado pelo
+// PRÓPRIO E-MAIL (não pelo uid), porque o convite é criado pelo
+// administrador antes da pessoa sequer ter uma conta — e o token de
+// autenticação do Firebase sempre carrega o e-mail (request.auth.token.email),
+// tanto para login por senha quanto pelo link de convite.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null && request.auth.token.email != null;
+    }
+    function myMember() {
+      return get(/databases/$(database)/documents/members/$(request.auth.token.email));
+    }
+    function isActiveMember() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/members/$(request.auth.token.email))
+        && myMember().data.status == 'ativo';
+    }
+    function isAdmin() {
+      return isActiveMember() && myMember().data.role == 'admin';
+    }
+
+    match /members/{email} {
+      // Qualquer pessoa logada pode ler o PRÓPRIO documento (para o site
+      // checar se o acesso dela está ativo, e qual o papel dela).
+      allow get: if signedIn() && request.auth.token.email == email;
+      // Só admins ativos podem listar todos os membros, convidar,
+      // mudar papel ou revogar acesso de qualquer um.
+      allow list, write: if isAdmin();
+    }
+
+    match /clients/{doc}   { allow read, write: if isActiveMember(); }
+    match /contracts/{doc} { allow read, write: if isActiveMember(); }
+    match /billings/{doc}  { allow read, write: if isActiveMember(); }
+  }
+}

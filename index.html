@@ -1,0 +1,2590 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contratos OCP — Gestão &amp; Faturamento</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --navy:#004A64;
+  --navy-dark:#013247;
+  --navy-darker:#012734;
+  --blue:#3E7A8E;
+  --blue-light:#80A5B2;
+  --blue-pale:#EAF1F3;
+  --bg:#F5F8F9;
+  --surface:#FFFFFF;
+  --text:#17262C;
+  --text-muted:#5B7480;
+  --border:#DCE6E9;
+  --success:#1F8A5F;
+  --success-bg:#E7F5EE;
+  --warning:#B9791C;
+  --warning-bg:#FBF1E1;
+  --danger:#C0392B;
+  --danger-bg:#FBEAE8;
+  --info:#2B6CB0;
+  --info-bg:#E8F0F9;
+  --purple:#6E5AA8;
+  --purple-bg:#EFEBF8;
+  --radius:10px;
+  --shadow:0 1px 2px rgba(1,50,71,.06),0 1px 8px rgba(1,50,71,.06);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  font-size:14px;
+  line-height:1.5;
+}
+#app{display:flex;min-height:100vh}
+::selection{background:var(--blue-light);color:#fff}
+
+/* ---------- Sidebar ---------- */
+.sidebar{
+  width:230px;flex-shrink:0;background:var(--navy-darker);color:#fff;
+  display:flex;flex-direction:column;position:sticky;top:0;height:100vh;
+}
+.brand{
+  display:flex;align-items:center;gap:10px;padding:20px 18px 16px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+.brand-mark{
+  width:34px;height:34px;border-radius:8px;background:linear-gradient(135deg,var(--blue-light),var(--navy));
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;color:#fff;
+}
+.brand-text{font-weight:700;font-size:14.5px;letter-spacing:.2px}
+.brand-sub{font-size:10.5px;color:var(--blue-light);letter-spacing:.6px;text-transform:uppercase;margin-top:1px}
+.nav{flex:1;padding:14px 10px;display:flex;flex-direction:column;gap:2px}
+.nav-item{
+  display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;color:#CBD9DE;
+  cursor:pointer;font-size:13.5px;font-weight:500;border:none;background:none;text-align:left;width:100%;
+  transition:background .12s, color .12s;
+}
+.nav-item svg{flex-shrink:0;width:17px;height:17px;opacity:.85}
+.nav-item:hover{background:rgba(255,255,255,.06);color:#fff}
+.nav-item.active{background:var(--blue-light);color:var(--navy-darker);font-weight:700}
+.nav-item.active svg{opacity:1}
+.nav-divider{margin:10px 12px 6px;font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:rgba(255,255,255,.35);font-weight:700}
+.sidebar-foot{padding:14px 18px;border-top:1px solid rgba(255,255,255,.08);font-size:11px;color:rgba(255,255,255,.4)}
+
+/* ---------- Main ---------- */
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{
+  background:var(--surface);border-bottom:1px solid var(--border);
+  padding:16px 28px;display:flex;align-items:center;justify-content:space-between;gap:16px;
+  position:sticky;top:0;z-index:5;
+}
+.topbar h1{font-size:19px;margin:0;font-weight:700;color:var(--navy-darker)}
+.topbar .crumbs{font-size:12.5px;color:var(--text-muted);margin-top:2px}
+.content{padding:24px 28px 60px;max-width:1320px;width:100%}
+
+/* ---------- Buttons ---------- */
+.btn{
+  display:inline-flex;align-items:center;gap:7px;border-radius:8px;border:1px solid transparent;
+  padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;
+  transition:filter .12s, background .12s, border-color .12s;
+  font-family:inherit;
+}
+.btn svg{width:15px;height:15px}
+.btn-primary{background:var(--navy);color:#fff}
+.btn-primary:hover{filter:brightness(1.12)}
+.btn-primary:disabled{background:#9db3ba;cursor:not-allowed}
+.btn-accent{background:var(--blue-light);color:var(--navy-darker)}
+.btn-accent:hover{filter:brightness(1.06)}
+.btn-outline{background:#fff;color:var(--navy);border-color:var(--border)}
+.btn-outline:hover{border-color:var(--blue-light);background:var(--blue-pale)}
+.btn-ghost{background:transparent;color:var(--text-muted);border-color:transparent}
+.btn-ghost:hover{background:var(--blue-pale);color:var(--navy)}
+.btn-danger{background:#fff;color:var(--danger);border-color:#f0c9c4}
+.btn-danger:hover{background:var(--danger-bg)}
+.btn-sm{padding:5px 10px;font-size:12px;border-radius:7px}
+.btn-block{width:100%;justify-content:center}
+
+/* ---------- Cards / surfaces ---------- */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
+.card-pad{padding:20px}
+.section-title{font-size:13px;font-weight:700;color:var(--navy-darker);text-transform:uppercase;letter-spacing:.4px;margin:0 0 14px}
+.card + .card{margin-top:18px}
+
+.grid{display:grid;gap:18px}
+.grid-2{grid-template-columns:1fr 1fr}
+.grid-3{grid-template-columns:repeat(3,1fr)}
+.grid-4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:900px){.grid-2,.grid-3,.grid-4{grid-template-columns:1fr}}
+
+/* KPI stat cards */
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.stat-top{display:flex;align-items:center;justify-content:space-between}
+.stat-label{font-size:11.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700}
+.stat-value{font-size:26px;font-weight:800;color:var(--navy-darker);margin-top:6px}
+.stat-icon{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center}
+.stat-icon svg{width:17px;height:17px}
+
+/* ---------- Forms ---------- */
+label{display:block;font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:5px;letter-spacing:.2px}
+.field{margin-bottom:14px}
+input[type=text],input[type=number],input[type=date],input[type=email],select,textarea{
+  width:100%;border:1px solid var(--border);border-radius:8px;padding:8px 11px;font-size:13.5px;
+  font-family:inherit;color:var(--text);background:#fff;
+}
+textarea{resize:vertical;min-height:64px}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--blue-light);outline-offset:0;border-color:var(--blue-light)}
+.field-row{display:flex;gap:12px}
+.field-row > .field{flex:1}
+.help{font-size:11.5px;color:var(--text-muted);margin-top:4px}
+.checkbox-row{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)}
+
+/* ---------- Table ---------- */
+.table-wrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;background:#fff;font-size:13px}
+th{
+  background:var(--blue-pale);color:var(--navy-darker);text-align:left;font-size:11.5px;
+  text-transform:uppercase;letter-spacing:.3px;padding:10px 12px;border-bottom:1px solid var(--border);
+  white-space:nowrap;
+}
+td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr.clickable{cursor:pointer}
+tr.clickable:hover td{background:var(--blue-pale)}
+.tbl-empty{padding:40px 20px;text-align:center;color:var(--text-muted)}
+
+/* ---------- Badges / status ---------- */
+.badge{
+  display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:99px;
+  font-size:11px;font-weight:700;letter-spacing:.2px;white-space:nowrap;
+}
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.st-pendente{background:#EEF1F2;color:#5B7480}
+.st-liberado{background:var(--info-bg);color:var(--info)}
+.st-bmgerado{background:var(--purple-bg);color:var(--purple)}
+.st-bmenviado{background:var(--warning-bg);color:var(--warning)}
+.st-bmaprovado{background:#E4F3F0;color:#187A63}
+.st-nfenviada{background:#FCEFE3;color:#B96A1C}
+.st-pago{background:var(--success-bg);color:var(--success)}
+.st-convidado{background:var(--warning-bg);color:var(--warning)}
+.st-ativo{background:var(--success-bg);color:var(--success)}
+.st-revogado{background:var(--danger-bg);color:var(--danger)}
+
+/* ---------- Tabs (within contract view) ---------- */
+.tabbar{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:20px}
+.tabbtn{
+  padding:10px 16px;font-size:13px;font-weight:600;color:var(--text-muted);background:none;border:none;
+  cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;font-family:inherit;
+}
+.tabbtn:hover{color:var(--navy)}
+.tabbtn.active{color:var(--navy);border-bottom-color:var(--navy)}
+
+/* ---------- Misc ---------- */
+.muted{color:var(--text-muted)}
+.mono{font-variant-numeric:tabular-nums}
+.divider{height:1px;background:var(--border);margin:18px 0}
+.empty-state{text-align:center;padding:60px 20px;color:var(--text-muted)}
+.empty-state svg{width:40px;height:40px;color:var(--blue-light);margin-bottom:10px}
+.empty-state h3{color:var(--navy-darker);margin:0 0 6px}
+.upload-zone{
+  border:2px dashed var(--border);border-radius:var(--radius);padding:36px 20px;text-align:center;
+  cursor:pointer;transition:border-color .15s, background .15s;background:#fbfdfd;
+}
+.upload-zone:hover,.upload-zone.dragover{border-color:var(--blue-light);background:var(--blue-pale)}
+.upload-zone svg{width:30px;height:30px;color:var(--blue-light);margin-bottom:8px}
+.spinner{
+  width:16px;height:16px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;
+  animation:spin .7s linear infinite;display:inline-block;
+}
+.spinner-dark{border:2px solid var(--border);border-top-color:var(--navy)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.steps{display:flex;align-items:center;gap:0;margin-bottom:24px}
+.step{display:flex;align-items:center;gap:8px;flex:1}
+.step-num{
+  width:26px;height:26px;border-radius:50%;background:var(--border);color:var(--text-muted);
+  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;
+}
+.step.done .step-num{background:var(--success);color:#fff}
+.step.active .step-num{background:var(--navy);color:#fff}
+.step-label{font-size:12.5px;font-weight:600;color:var(--text-muted)}
+.step.active .step-label,.step.done .step-label{color:var(--navy-darker)}
+.step-line{flex:1;height:2px;background:var(--border);margin:0 6px}
+.step-line.done{background:var(--success)}
+
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(1,39,52,.45);display:flex;align-items:center;justify-content:center;
+  z-index:50;padding:20px;
+}
+.modal{background:#fff;border-radius:12px;max-width:560px;width:100%;max-height:88vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.modal-head{padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-head h3{margin:0;font-size:16px;color:var(--navy-darker)}
+.modal-body{padding:20px 22px}
+.modal-foot{padding:16px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px}
+
+.toast-wrap{position:fixed;bottom:20px;right:20px;z-index:100;display:flex;flex-direction:column;gap:8px}
+.toast{
+  background:var(--navy-darker);color:#fff;padding:11px 16px;border-radius:9px;font-size:13px;font-weight:600;
+  box-shadow:0 8px 24px rgba(0,0,0,.2);animation:toastin .2s ease-out;max-width:340px;
+}
+.toast.err{background:var(--danger)}
+.toast.ok{background:var(--success)}
+@keyframes toastin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+.pill-list{display:flex;flex-wrap:wrap;gap:6px}
+.pill{background:var(--blue-pale);color:var(--navy);font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:99px}
+
+.progress-track{height:6px;background:var(--border);border-radius:99px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--blue-light),var(--navy));border-radius:99px;transition:width .3s}
+
+a.link{color:var(--navy);font-weight:600;text-decoration:none;cursor:pointer}
+a.link:hover{text-decoration:underline}
+
+.kv{display:grid;grid-template-columns:150px 1fr;gap:8px 14px;font-size:13px}
+.kv dt{color:var(--text-muted);font-weight:600}
+.kv dd{margin:0;color:var(--text)}
+
+.icon-btn{
+  width:30px;height:30px;border-radius:7px;border:1px solid var(--border);background:#fff;color:var(--text-muted);
+  display:inline-flex;align-items:center;justify-content:center;cursor:pointer;
+}
+.icon-btn:hover{background:var(--blue-pale);color:var(--navy);border-color:var(--blue-light)}
+.icon-btn svg{width:15px;height:15px}
+
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="toast-wrap" id="toastWrap"></div>
+<div id="modalRoot"></div>
+
+<script type="module">
+  /* =========================================================
+     CONFIGURAÇÃO DO FIREBASE — preencha com os dados do SEU
+     projeto (Firebase Console → Configurações do projeto →
+     Seus apps → SDK setup and configuration → "Config").
+     Isso NÃO é segredo: o Firestore/Storage são protegidos
+     pelas regras de segurança (firestore.rules / storage.rules)
+     e pelo login, não por esconder esta config.
+     ========================================================= */
+  const firebaseConfig = {
+    apiKey: "AIzaSyDGMbIhUwnDhoR9EM965eDNvRslNU0W-rM",
+    authDomain: "gestaocontrato-aac92.firebaseapp.com",
+    projectId: "gestaocontrato-aac92",
+    storageBucket: "gestaocontrato-aac92.firebasestorage.app",
+    messagingSenderId: "104788808169",
+    appId: "1:104788808169:web:a4663715f2ec777998fb78",
+  };
+
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+  import {
+    getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut,
+    sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, updatePassword,
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+  import {
+    getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc, onSnapshot, writeBatch,
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+  import {
+    getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject,
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js";
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const storage = getStorage(app);
+
+  window.__firebase = {
+    app, auth, db, storage,
+    fb: {
+      onAuthStateChanged, signInWithEmailAndPassword, signOut,
+      sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, updatePassword,
+      collection, doc, getDoc, getDocs, setDoc, deleteDoc, onSnapshot, writeBatch,
+      storageRef, uploadBytes, getDownloadURL, deleteObject,
+    },
+  };
+</script>
+
+<script type="module">
+/* ============================================================
+   CONTRATOS OCP — gestão de contratos e faturamento
+   ============================================================ */
+
+/* ---------- constants ---------- */
+const STATUS_STEPS = [
+  { key: 'pendente',   label: 'Pendente',    cls: 'st-pendente'  },
+  { key: 'liberado',   label: 'Liberado',    cls: 'st-liberado'  },
+  { key: 'bmgerado',   label: 'BM Gerado',   cls: 'st-bmgerado'  },
+  { key: 'bmenviado',  label: 'BM Enviado',  cls: 'st-bmenviado' },
+  { key: 'bmaprovado', label: 'BM Aprovado', cls: 'st-bmaprovado'},
+  { key: 'nfenviada',  label: 'NF Enviada',  cls: 'st-nfenviada' },
+  { key: 'pago',       label: 'Pago',        cls: 'st-pago'      },
+];
+
+const MEMBERS_COL = 'members';
+let currentMember = null; // {nome, email, role, status} — preenchido após login
+
+function isAdminUser() { return !!currentMember && currentMember.role === 'admin'; }
+
+const BUSINESS_UNITS = ['Oceanografia', 'Geotecnia', 'Geofísica', 'Meio-Ambiente', 'Resiliência', 'Sustentabilidade', 'Risco e Segurança Operacional'];
+
+const ADITIVO_FIELD_LABELS = {
+  dataTermino: 'Data de término',
+  dataInicio: 'Data de início',
+  valorTotal: 'Valor total do contrato',
+  escopo: 'Escopo',
+  medicao: 'Medição',
+  prazoPagamentoDias: 'Prazo de pagamento (dias)',
+  observacoes: 'Observações',
+  riscos: 'Riscos e pontos de atenção',
+  reembolso: 'Reembolso',
+  clausulaReajuste: 'Cláusula de reajuste',
+  clausulaCancelamento: 'Cláusula de cancelamento',
+};
+
+function openModal(html) {
+  const root = document.getElementById('modalRoot');
+  root.innerHTML = `<div class="modal-overlay" id="modalOverlay"><div class="modal">${html}</div></div>`;
+  document.getElementById('modalOverlay').addEventListener('mousedown', (e) => {
+    if (e.target.id === 'modalOverlay') closeModal();
+  });
+}
+function closeModal() {
+  const root = document.getElementById('modalRoot');
+  if (root) root.innerHTML = '';
+}
+
+const PLACEHOLDER_TOKENS = [
+  ['{{CLIENTE}}', 'Nome do cliente'],
+  ['{{CNPJ_CLIENTE}}', 'CNPJ do cliente'],
+  ['{{FORNECEDOR}}', 'Empresa OceanPact contratada'],
+  ['{{CNPJ_FORNECEDOR}}', 'CNPJ da empresa OceanPact'],
+  ['{{CONTRATO_NUMERO}}', 'Número do contrato'],
+  ['{{CONTRATO_VALOR_TOTAL}}', 'Valor total do contrato'],
+  ['{{MOEDA}}', 'Moeda do contrato'],
+  ['{{MARCO_CODIGO}}', 'Código do marco (ex. BM1)'],
+  ['{{MARCO_DESCRICAO}}', 'Descrição do marco'],
+  ['{{MARCO_GATILHO}}', 'Condição de liberação do marco'],
+  ['{{MARCO_PERCENTUAL}}', 'Percentual do marco'],
+  ['{{MARCO_VALOR}}', 'Valor do marco (R$)'],
+  ['{{DATA_LIBERACAO}}', 'Data em que o faturamento foi liberado'],
+  ['{{DATA_GERACAO}}', 'Data de geração do BM (hoje)'],
+];
+
+/* ---------- storage helpers (Firestore) ---------- */
+const DB = { clients: {}, contracts: [], billings: [], loaded: false };
+let _unsubscribers = [];
+let _pendingRenders = 0;
+
+function startFirestoreSync(onFirstLoadDone) {
+  const { db, fb } = window.__firebase;
+  let loadedFlags = { clients: false, contracts: false, billings: false };
+  function checkAllLoaded() {
+    if (loadedFlags.clients && loadedFlags.contracts && loadedFlags.billings && !DB.loaded) {
+      DB.loaded = true;
+      if (onFirstLoadDone) onFirstLoadDone();
+    }
+  }
+  const unsub1 = fb.onSnapshot(fb.collection(db, 'clients'), (snap) => {
+    const obj = {};
+    snap.forEach(d => obj[d.id] = d.data());
+    DB.clients = obj;
+    loadedFlags.clients = true;
+    checkAllLoaded();
+    if (DB.loaded) render();
+  }, (err) => { console.error('clients sync', err); toast('Erro ao sincronizar clientes: ' + err.message, 'err'); });
+
+  const unsub2 = fb.onSnapshot(fb.collection(db, 'contracts'), (snap) => {
+    DB.contracts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    loadedFlags.contracts = true;
+    checkAllLoaded();
+    if (DB.loaded) render();
+  }, (err) => { console.error('contracts sync', err); toast('Erro ao sincronizar contratos: ' + err.message, 'err'); });
+
+  const unsub3 = fb.onSnapshot(fb.collection(db, 'billings'), (snap) => {
+    DB.billings = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    loadedFlags.billings = true;
+    checkAllLoaded();
+    if (DB.loaded) render();
+  }, (err) => { console.error('billings sync', err); toast('Erro ao sincronizar faturamentos: ' + err.message, 'err'); });
+
+  _unsubscribers = [unsub1, unsub2, unsub3];
+}
+
+function stopFirestoreSync() {
+  _unsubscribers.forEach(u => { try { u(); } catch (e) {} });
+  _unsubscribers = [];
+  DB.clients = {}; DB.contracts = []; DB.billings = []; DB.loaded = false;
+}
+
+function cleanForFirestore(obj) {
+  // Firestore rejects `undefined`; JSON round-trip strips it and any functions.
+  return JSON.parse(JSON.stringify(obj));
+}
+
+async function syncCollection(name, items, idFn) {
+  const { db, fb } = window.__firebase;
+  const colRef = fb.collection(db, name);
+  const snap = await fb.getDocs(colRef);
+  const existingIds = new Set(snap.docs.map(d => d.id));
+  const currentIds = new Set(items.map(idFn));
+  const batch = fb.writeBatch(db);
+  items.forEach(item => batch.set(fb.doc(db, name, idFn(item)), cleanForFirestore(item)));
+  existingIds.forEach(id => { if (!currentIds.has(id)) batch.delete(fb.doc(db, name, id)); });
+  await batch.commit();
+}
+
+async function dbSave(part) {
+  try {
+    if (part === 'clients' || !part) await syncCollection('clients', Object.values(DB.clients), c => c.cnpj);
+    if (part === 'contracts' || !part) await syncCollection('contracts', DB.contracts, c => c.id);
+    if (part === 'billings' || !part) await syncCollection('billings', DB.billings, b => b.id);
+  } catch (e) {
+    console.error('Erro ao salvar', e);
+    toast('Falha ao salvar no banco de dados: ' + (e.message || e), 'err');
+    throw e;
+  }
+}
+
+/* ---------- utils ---------- */
+function uid(prefix) { return (prefix || 'id') + '_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
+
+function onlyDigits(s) { return (s || '').replace(/\D/g, ''); }
+
+function formatCNPJ(v) {
+  const d = onlyDigits(v);
+  if (d.length !== 14) return v || '';
+  return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+}
+
+function formatCurrency(n, currency) {
+  if (n === null || n === undefined || n === '') return '—';
+  const num = Number(n);
+  if (isNaN(num)) return String(n);
+  const cur = currency || 'BRL';
+  try {
+    return num.toLocaleString('pt-BR', { style: 'currency', currency: cur === 'USD' ? 'USD' : (cur === 'BRL' ? 'BRL' : 'BRL') });
+  } catch (e) {
+    return (cur === 'USD' ? 'US$ ' : 'R$ ') + num.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+  }
+}
+
+function formatDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso + (iso.length === 10 ? 'T00:00:00' : ''));
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('pt-BR');
+}
+
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+
+async function sha256Hex(buffer) {
+  const digest = await crypto.subtle.digest('SHA-256', buffer);
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function findContractByHash(hash) { return DB.contracts.find(c => c.sourceHash === hash); }
+function findContractByNumber(cnpj, numero) {
+  if (!numero) return null;
+  return DB.contracts.find(c => c.clientCnpj === cnpj && (c.numero || '').trim().toLowerCase() === numero.trim().toLowerCase());
+}
+
+
+function daysBetween(a, b) {
+  const d1 = new Date(a), d2 = new Date(b || todayISO());
+  return Math.round((d2 - d1) / 86400000);
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+function computeStatus(b) {
+  if (b.paymentDate) return 'pago';
+  if (b.nfSentDate) return 'nfenviada';
+  if (b.bmApprovedDate) return 'bmaprovado';
+  if (b.bmSentDate) return 'bmenviado';
+  if (b.bmGeneratedDate) return 'bmgerado';
+  if (b.releasedDate) return 'liberado';
+  return 'pendente';
+}
+
+function statusMeta(key) { return STATUS_STEPS.find(s => s.key === key) || STATUS_STEPS[0]; }
+
+function getClient(cnpj) { return DB.clients[cnpj]; }
+function getContract(id) { return DB.contracts.find(c => c.id === id); }
+function contractsForClient(cnpj) { return DB.contracts.filter(c => c.clientCnpj === cnpj); }
+function billingsForContract(id) { return DB.billings.filter(b => b.contractId === id).sort((a,b)=> (a.codigo||'').localeCompare(b.codigo||'')); }
+
+/* ---------- toast ---------- */
+function toast(msg, kind) {
+  const wrap = document.getElementById('toastWrap');
+  const el = document.createElement('div');
+  el.className = 'toast' + (kind === 'err' ? ' err' : kind === 'ok' ? ' ok' : '');
+  el.textContent = msg;
+  wrap.appendChild(el);
+  setTimeout(() => el.remove(), 4200);
+}
+/* ---------- PDF text extraction ---------- */
+async function extractPdfText(file, onProgress) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  let text = '';
+  const n = pdf.numPages;
+  for (let i = 1; i <= n; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    text += content.items.map(it => it.str).join(' ') + '\n\n';
+    if (onProgress) onProgress(i, n);
+  }
+  return text;
+}
+
+function trimForModel(text) {
+  const HEAD = 40000, TAIL = 30000;
+  if (text.length <= HEAD + TAIL) return text;
+  return text.slice(0, HEAD) + '\n\n[... trecho intermediário omitido para caber no limite de análise ...]\n\n' + text.slice(-TAIL);
+}
+
+/* ---------- AI extraction via Anthropic API ---------- */
+const EXTRACTION_SYSTEM_PROMPT = `Você é um assistente que extrai dados estruturados de contratos comerciais para uma ferramenta de gestão de faturamento. Leia o texto do contrato fornecido e devolva SOMENTE um objeto JSON válido (sem markdown, sem crases, sem comentários, sem texto antes ou depois), seguindo exatamente este formato:
+
+{
+  "cliente": {"nome": "", "cnpj": ""},
+  "fornecedor": {"nome": "", "cnpj": ""},
+  "contrato": {
+    "numero": "",
+    "propostaRef": "",
+    "dataAssinatura": "AAAA-MM-DD ou vazio",
+    "dataInicio": "AAAA-MM-DD ou vazio",
+    "dataTermino": "AAAA-MM-DD ou vazio",
+    "moeda": "BRL ou USD ou OUTRO",
+    "valorTotal": 0,
+    "medicao": "Lump Sum, Por HH ou Outro",
+    "unidadeNegocio": [],
+    "escopo": "",
+    "prazoPagamentoDias": 30,
+    "reembolso": "",
+    "clausulaReajuste": "",
+    "clausulaCancelamento": "",
+    "subcontratacao": "",
+    "riscos": "",
+    "observacoes": ""
+  },
+  "marcos": [
+    {"codigo": "BM1", "descricao": "", "percentual": "15%", "valor": 0, "gatilho": "descreva objetivamente o que libera o faturamento deste marco", "dataPrevisao": ""}
+  ]
+}
+
+Regras importantes:
+- "unidadeNegocio" deve ser uma lista escolhida entre: Oceanografia, Geotecnia, Geofísica, Meio-Ambiente, Resiliência, Sustentabilidade, Risco e Segurança Operacional (as que se aplicarem ao escopo, pode ser mais de uma ou nenhuma).
+- CNPJ deve ser só os 14 dígitos, sem formatação.
+- Datas sempre em AAAA-MM-DD; se não encontrar, deixe string vazia "".
+- valorTotal e valor dos marcos devem ser números (sem "R$", sem separador de milhar), use ponto decimal.
+- O campo "gatilho" de cada marco é o mais importante: descreva com precisão a condição objetiva que libera aquele faturamento (ex.: "assinatura do contrato", "mobilização da embarcação e calibração concluída", "entrega do relatório final draft"), baseando-se no texto do contrato ou da proposta comercial anexa, não apenas no nome do marco.
+- Se o contrato não tiver marcos de faturamento explícitos, tente inferir a partir do cronograma de pagamento descrito; se não houver nenhuma informação, devolva uma lista vazia.
+- Nunca invente CNPJ, números de contrato ou valores que não constem no texto — deixe vazio/0 quando não encontrar.
+- Responda em português, exceto nomes próprios/razão social.`;
+
+async function callClaudeExtraction(contractText) {
+  const trimmed = trimForModel(contractText);
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1000,
+      system: EXTRACTION_SYSTEM_PROMPT,
+      messages: [
+        { role: 'user', content: 'Texto extraído do contrato (pode conter quebras de layout do PDF):\n\n' + trimmed }
+      ],
+    }),
+  });
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    throw new Error('Falha na análise por IA (HTTP ' + response.status + '). ' + errText.slice(0, 200));
+  }
+  const data = await response.json();
+  const textBlocks = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+  let jsonStr = textBlocks.trim();
+  const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch) jsonStr = fenceMatch[1].trim();
+  const firstBrace = jsonStr.indexOf('{');
+  const lastBrace = jsonStr.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
+  let parsed;
+  try { parsed = JSON.parse(jsonStr); }
+  catch (e) { throw new Error('Não foi possível interpretar a resposta da IA como JSON. Tente novamente ou preencha manualmente.'); }
+  return parsed;
+}
+
+const ADITIVO_SYSTEM_PROMPT = `Você é um assistente que analisa aditivos/termos aditivos de contratos comerciais para uma ferramenta de gestão de faturamento. Você recebe (1) um resumo em JSON dos dados atuais do contrato original e (2) o texto extraído do PDF do aditivo. Compare os dois e devolva SOMENTE um objeto JSON válido (sem markdown, sem crases, sem texto antes ou depois) no formato:
+
+{
+  "resumo": "resumo objetivo em 1-3 frases do que este aditivo muda no contrato",
+  "tipos": ["Prazo" e/ou "Valor" e/ou "Quantidade/Escopo" e/ou "Novas linhas de serviço" e/ou "Outro"],
+  "alteracoes": [
+    {"campo": "dataTermino", "valorNovo": "AAAA-MM-DD"},
+    {"campo": "valorTotal", "valorNovo": 0}
+  ],
+  "marcosNovos": [
+    {"codigo": "BM6", "descricao": "", "percentual": "", "valor": 0, "gatilho": "", "dataPrevisao": ""}
+  ],
+  "marcosAlterados": [
+    {"codigoExistente": "BM3", "campo": "valor", "valorNovo": 0, "motivo": "breve explicação"}
+  ]
+}
+
+Regras importantes:
+- "campo" em "alteracoes" só pode ser um destes: dataTermino, dataInicio, valorTotal, escopo, medicao, prazoPagamentoDias, observacoes, riscos, reembolso, clausulaReajuste, clausulaCancelamento. Só inclua os campos que o aditivo de fato altera — não repita valores que não mudaram.
+- "marcosNovos" é para linhas de serviço/marcos de faturamento inteiramente novos criados pelo aditivo.
+- "marcosAlterados" é para marcos JÁ EXISTENTES no contrato original (use o código exatamente como aparece na lista de marcos atuais fornecida) cujo valor, percentual, descrição ou gatilho tenham sido alterados pelo aditivo. "campo" aqui só pode ser: valor, percentual, descricao, gatilho, dataPrevisao.
+- Datas em AAAA-MM-DD. Valores numéricos com ponto decimal, sem "R$" e sem separador de milhar.
+- Se não houver certeza sobre uma alteração, não a inclua — é melhor deixar de fora do que inventar.
+- Nunca repita nos resultados algo que já está igual no contrato original.
+- Responda em português, exceto nomes próprios.`;
+
+async function callClaudeAditivoExtraction(contractContext, aditivoText) {
+  const trimmed = trimForModel(aditivoText);
+  const userMsg = 'Dados atuais do contrato (JSON):\n' + JSON.stringify(contractContext) +
+    '\n\nTexto extraído do PDF do aditivo:\n\n' + trimmed;
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1000,
+      system: ADITIVO_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userMsg }],
+    }),
+  });
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    throw new Error('Falha na análise por IA (HTTP ' + response.status + '). ' + errText.slice(0, 200));
+  }
+  const data = await response.json();
+  const textBlocks = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+  let jsonStr = textBlocks.trim();
+  const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch) jsonStr = fenceMatch[1].trim();
+  const firstBrace = jsonStr.indexOf('{');
+  const lastBrace = jsonStr.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
+  try { return JSON.parse(jsonStr); }
+  catch (e) { throw new Error('Não foi possível interpretar a resposta da IA como JSON. Tente novamente.'); }
+}
+
+/* ---------- Excel BM generation (SheetJS) ---------- */
+function buildTokenMap(client, contract, billing) {
+  return {
+    '{{CLIENTE}}': client ? client.nome : '',
+    '{{CNPJ_CLIENTE}}': client ? formatCNPJ(client.cnpj) : '',
+    '{{FORNECEDOR}}': contract.fornecedorNome || '',
+    '{{CNPJ_FORNECEDOR}}': contract.fornecedorCnpj ? formatCNPJ(contract.fornecedorCnpj) : '',
+    '{{CONTRATO_NUMERO}}': contract.numero || '',
+    '{{CONTRATO_VALOR_TOTAL}}': contract.valorTotal ? Number(contract.valorTotal).toLocaleString('pt-BR', {minimumFractionDigits:2}) : '',
+    '{{MOEDA}}': contract.moeda || '',
+    '{{MARCO_CODIGO}}': billing.codigo || '',
+    '{{MARCO_DESCRICAO}}': billing.descricao || '',
+    '{{MARCO_GATILHO}}': billing.gatilho || '',
+    '{{MARCO_PERCENTUAL}}': billing.percentual || '',
+    '{{MARCO_VALOR}}': billing.valor ? Number(billing.valor).toLocaleString('pt-BR', {minimumFractionDigits:2}) : '',
+    '{{DATA_LIBERACAO}}': formatDate(billing.releasedDate),
+    '{{DATA_GERACAO}}': formatDate(todayISO()),
+  };
+}
+
+function applyTokensToWorkbook(wb, tokenMap) {
+  wb.SheetNames.forEach(name => {
+    const sheet = wb.Sheets[name];
+    Object.keys(sheet).forEach(cellRef => {
+      if (cellRef[0] === '!') return;
+      const cell = sheet[cellRef];
+      if (cell && typeof cell.v === 'string' && cell.v.indexOf('{{') !== -1) {
+        let v = cell.v;
+        Object.keys(tokenMap).forEach(tok => {
+          if (v.indexOf(tok) !== -1) v = v.split(tok).join(tokenMap[tok]);
+        });
+        cell.v = v;
+        if (cell.w) cell.w = v;
+        cell.t = 's';
+      }
+    });
+  });
+  return wb;
+}
+
+async function generateBmFile(client, contract, billing) {
+  if (!contract.bmTemplateUrl) throw new Error('Este contrato ainda não tem um modelo de BM em Excel cadastrado.');
+  const resp = await fetch(contract.bmTemplateUrl);
+  if (!resp.ok) throw new Error('Não foi possível baixar o modelo de BM do banco de dados (HTTP ' + resp.status + ').');
+  const arrBuf = await resp.arrayBuffer();
+  const wb = XLSX.read(new Uint8Array(arrBuf), { type: 'array', cellStyles: true });
+  applyTokensToWorkbook(wb, buildTokenMap(client, contract, billing));
+  const out = XLSX.write(wb, { type: 'array', bookType: 'xlsx', cellStyles: true });
+  const blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const fileName = 'BM_' + (billing.codigo || 'marco') + '_' + (contract.numero || contract.id).toString().replace(/[^\w-]/g, '') + '.xlsx';
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = fileName;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  return fileName;
+}
+
+/* ---------- Firebase Storage helpers (BM templates & cost spreadsheets) ---------- */
+async function uploadFileToStorage(path, file) {
+  const { storage, fb } = window.__firebase;
+  const sref = fb.storageRef(storage, path);
+  await fb.uploadBytes(sref, file);
+  const url = await fb.getDownloadURL(sref);
+  return { url, path };
+}
+
+async function deleteFileFromStorage(path) {
+  if (!path) return;
+  try {
+    const { storage, fb } = window.__firebase;
+    await fb.deleteObject(fb.storageRef(storage, path));
+  } catch (e) { console.warn('Não foi possível apagar arquivo antigo do Storage:', e.message); }
+}
+
+async function downloadFromUrl(url, fileName) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('Não foi possível baixar o arquivo (HTTP ' + resp.status + ').');
+  const blob = await resp.blob();
+  const objUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objUrl; a.download = fileName || 'arquivo';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(objUrl), 4000);
+}
+/* ---------- icons (minimal inline SVG) ---------- */
+const ICONS = {
+  dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
+  building: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M9 8h1M14 8h1M9 12h1M14 12h1M9 16h1M14 16h1"/></svg>',
+  file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  upload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
+  download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 20h16"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>',
+  edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>',
+  chevronRight: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>',
+  x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a1 1 0 0 0 .9 1.5h18.6a1 1 0 0 0 .9-1.5L13.7 3.9a1 1 0 0 0-1.7 0Z"/><path d="M12 9v4M12 17h.01"/></svg>',
+  bolt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg>',
+  money: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 10v.01M18 14v.01"/></svg>',
+  sheet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
+  back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>',
+  sparkle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/></svg>',
+  info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v5h1"/></svg>',
+  shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6Z"/><path d="m9 12 2 2 4-4"/></svg>',
+  mail: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg>',
+  ban: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m5.5 5.5 13 13"/></svg>',
+};
+function icon(name) { return ICONS[name] || ''; }
+
+/* ---------- routing ---------- */
+function currentRoute() {
+  const hash = location.hash.replace(/^#\/?/, '');
+  const parts = hash.split('/').filter(Boolean);
+  return { name: parts[0] || 'dashboard', params: parts.slice(1) };
+}
+window.addEventListener('hashchange', render);
+
+const NAV_ITEMS = [
+  { key: 'dashboard', label: 'Painel', icon: 'dashboard' },
+  { key: 'clientes', label: 'Clientes', icon: 'building' },
+  { key: 'contratos', label: 'Contratos', icon: 'file' },
+];
+
+function layout(innerHtml, opts) {
+  opts = opts || {};
+  const route = currentRoute();
+  const navHtml = NAV_ITEMS.map(item => `
+    <button class="nav-item ${route.name === item.key ? 'active' : ''}" data-nav="${item.key}">
+      ${icon(item.icon)}<span>${item.label}</span>
+    </button>`).join('');
+
+  document.getElementById('app').innerHTML = `
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">OP</div>
+        <div>
+          <div class="brand-text">Contratos OCP</div>
+          <div class="brand-sub">Gestão &amp; Faturamento</div>
+        </div>
+      </div>
+      <nav class="nav">
+        ${navHtml}
+        <div class="nav-divider">Ações</div>
+        <button class="nav-item" data-nav="novo-contrato">${icon('plus')}<span>Novo contrato</span></button>
+        ${isAdminUser() ? `
+        <div class="nav-divider">Administração</div>
+        <button class="nav-item ${route.name === 'admin' ? 'active' : ''}" data-nav="admin">${icon('shield')}<span>Usuários</span></button>` : ''}
+      </nav>
+      <div class="sidebar-foot">
+        ${currentMember ? `<div style="margin-bottom:2px;font-weight:700;word-break:break-word">${escapeHtml(currentMember.nome||'')}</div><div style="margin-bottom:8px;word-break:break-all;opacity:.75">${escapeHtml(currentMember.email||'')} · ${currentMember.role==='admin'?'Admin':'Usuário'}</div><button class="btn btn-ghost btn-sm" id="btnLogout" style="color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.15)">Sair</button>` : ''}
+        <div style="margin-top:10px">EnvironPact · OceanPact Group</div>
+      </div>
+    </aside>
+    <div class="main">
+      <div class="topbar">
+        <div>
+          <h1>${opts.title || ''}</h1>
+          ${opts.crumbs ? `<div class="crumbs">${opts.crumbs}</div>` : ''}
+        </div>
+        <div>${opts.actions || ''}</div>
+      </div>
+      <div class="content">${innerHtml}</div>
+    </div>
+  `;
+  document.querySelectorAll('[data-nav]').forEach(btn => {
+    btn.addEventListener('click', () => { location.hash = '#/' + btn.dataset.nav; });
+  });
+  wireLogout();
+}
+/* ---------- shared bits ---------- */
+function statusBadge(key) {
+  const m = statusMeta(key);
+  return `<span class="badge ${m.cls}"><span class="dot"></span>${m.label}</span>`;
+}
+
+function contractTotals(contractId) {
+  const bs = billingsForContract(contractId);
+  const total = bs.reduce((s, b) => s + (Number(b.valor) || 0), 0);
+  const paid = bs.filter(b => b.paymentDate).reduce((s, b) => s + (Number(b.valor) || 0), 0);
+  return { count: bs.length, total, paid };
+}
+
+function clientContractsCount(cnpj) { return contractsForClient(cnpj).length; }
+
+/* ---------- DASHBOARD ---------- */
+function renderDashboard() {
+  const allBillings = DB.billings.map(b => ({ b, contract: getContract(b.contractId) })).filter(x => x.contract);
+  const counts = {};
+  STATUS_STEPS.forEach(s => counts[s.key] = 0);
+  let valorPendente = 0, valorPago = 0;
+  allBillings.forEach(({ b }) => {
+    const st = computeStatus(b);
+    counts[st]++;
+    if (st === 'pago') valorPago += Number(b.valor) || 0;
+    else valorPendente += Number(b.valor) || 0;
+  });
+
+  const kpis = [
+    { label: 'Contratos ativos', value: DB.contracts.length, icon: 'file', color: 'var(--navy)', bg: 'var(--blue-pale)' },
+    { label: 'Clientes', value: Object.keys(DB.clients).length, icon: 'building', color: 'var(--navy)', bg: 'var(--blue-pale)' },
+    { label: 'Aguardando ação', value: counts.pendente + counts.liberado + counts.bmgerado, icon: 'clock', color: 'var(--warning)', bg: 'var(--warning-bg)' },
+    { label: 'Em aprovação/cobrança', value: counts.bmenviado + counts.bmaprovado + counts.nfenviada, icon: 'bolt', color: 'var(--info)', bg: 'var(--info-bg)' },
+    { label: 'Valor a receber', value: formatCurrency(valorPendente, 'BRL'), icon: 'money', color: 'var(--navy)', bg: 'var(--blue-pale)', isText: true },
+    { label: 'Valor recebido', value: formatCurrency(valorPago, 'BRL'), icon: 'check', color: 'var(--success)', bg: 'var(--success-bg)', isText: true },
+  ];
+
+  const kpiHtml = kpis.map(k => `
+    <div class="stat-card">
+      <div class="stat-top">
+        <div class="stat-label">${k.label}</div>
+        <div class="stat-icon" style="background:${k.bg};color:${k.color}">${icon(k.icon)}</div>
+      </div>
+      <div class="stat-value" style="${k.isText ? 'font-size:19px' : ''}">${k.value}</div>
+    </div>`).join('');
+
+  const statusStripHtml = STATUS_STEPS.map(s => `
+    <div style="flex:1;text-align:center">
+      <div style="font-size:22px;font-weight:800;color:var(--navy-darker)">${counts[s.key]}</div>
+      <span class="badge ${s.cls}" style="margin-top:4px"><span class="dot"></span>${s.label}</span>
+    </div>`).join('<div style="width:1px;background:var(--border)"></div>');
+
+  const rows = allBillings
+    .sort((a, b) => {
+      const order = ['bmenviado','liberado','bmgerado','bmaprovado','pendente','nfenviada','pago'];
+      return order.indexOf(computeStatus(a.b)) - order.indexOf(computeStatus(b.b));
+    })
+    .map(({ b, contract }) => {
+      const client = getClient(contract.clientCnpj);
+      const st = computeStatus(b);
+      const lastDate = b.paymentDate || b.nfSentDate || b.bmApprovedDate || b.bmSentDate || b.bmGeneratedDate || b.releasedDate;
+      const days = lastDate ? daysBetween(lastDate, todayISO()) : '—';
+      return `
+      <tr class="clickable" data-goto="contrato/${contract.id}/faturamento">
+        <td>${escapeHtml(client ? client.nome : '—')}</td>
+        <td class="mono">${escapeHtml(contract.numero || '—')}</td>
+        <td><strong>${escapeHtml(b.codigo)}</strong> · ${escapeHtml((b.descricao||'').slice(0,40))}${(b.descricao||'').length>40?'…':''}</td>
+        <td class="mono">${formatCurrency(b.valor, contract.moeda)}</td>
+        <td>${statusBadge(st)}</td>
+        <td class="muted">${days === '—' ? '—' : days + ' dia(s)'}</td>
+      </tr>`;
+    }).join('');
+
+  const html = `
+    <div class="grid grid-3" style="grid-template-columns:repeat(3,1fr);margin-bottom:18px">
+      ${kpiHtml}
+    </div>
+    <div class="card card-pad" style="margin-bottom:18px">
+      <div class="section-title">Funil de faturamento</div>
+      <div style="display:flex;align-items:stretch;gap:10px">${statusStripHtml}</div>
+    </div>
+    <div class="card">
+      <div class="card-pad" style="padding-bottom:0">
+        <div class="section-title">Faturamentos — visão geral</div>
+      </div>
+      <div class="table-wrap" style="border:none;border-radius:0">
+        <table>
+          <thead><tr><th>Cliente</th><th>Contrato</th><th>Marco</th><th>Valor</th><th>Status</th><th>Há quanto tempo</th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="6" class="tbl-empty">Nenhum faturamento cadastrado ainda. Crie um contrato para começar.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  layout(html, { title: 'Painel de faturamento', crumbs: 'Visão geral de todos os contratos e marcos' });
+  bindGoto();
+}
+
+/* ---------- CLIENTES ---------- */
+/* ---------- CLIENTES ---------- */
+function confirmDeleteClient(client) {
+  const contracts = contractsForClient(client.cnpj);
+  if (contracts.length > 0) {
+    toast(`Não é possível excluir: este cliente tem ${contracts.length} contrato(s) cadastrado(s). Exclua os contratos primeiro.`, 'err');
+    return;
+  }
+  if (!confirm(`Excluir o cliente "${client.nome}" (${formatCNPJ(client.cnpj)})? Esta ação não pode ser desfeita.`)) return;
+  deleteClient(client);
+}
+
+async function deleteClient(client) {
+  delete DB.clients[client.cnpj];
+  try {
+    await dbSave('clients');
+    toast('Cliente excluído.', 'ok');
+    location.hash = '#/clientes';
+  } catch (err) {
+    toast('Erro ao excluir cliente: ' + (err.message || err), 'err');
+  }
+}
+
+function renderClients() {
+  const list = Object.values(DB.clients).sort((a, b) => a.nome.localeCompare(b.nome));
+  const rows = list.map(c => `
+    <tr class="clickable" data-goto="clientes/${c.cnpj}">
+      <td><strong>${escapeHtml(c.nome)}</strong></td>
+      <td class="mono">${formatCNPJ(c.cnpj)}</td>
+      <td>${clientContractsCount(c.cnpj)}</td>
+      <td>${escapeHtml((c.contatos && c.contatos[0] && c.contatos[0].email) || '—')}</td>
+      <td>${icon('chevronRight')}</td>
+    </tr>`).join('');
+
+  const html = `
+    <div class="card">
+      <div class="table-wrap" style="border:none">
+        <table>
+          <thead><tr><th>Cliente</th><th>CNPJ</th><th>Contratos</th><th>Contato</th><th></th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="5" class="tbl-empty">Nenhum cliente cadastrado. Cadastre importando um contrato.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>`;
+  layout(html, {
+    title: 'Clientes', crumbs: `${list.length} cliente(s) cadastrado(s)`,
+    actions: `<button class="btn btn-primary" data-nav="novo-contrato">${icon('plus')}Novo contrato</button>`,
+  });
+  bindGoto();
+}
+
+function renderClientDetail(cnpj) {
+  const client = getClient(cnpj);
+  if (!client) { layout(`<div class="empty-state"><h3>Cliente não encontrado</h3></div>`, { title: 'Cliente' }); return; }
+  const contracts = contractsForClient(cnpj);
+  const rows = contracts.map(c => {
+    const t = contractTotals(c.id);
+    return `<tr class="clickable" data-goto="contrato/${c.id}/ficha">
+      <td class="mono">${escapeHtml(c.numero || c.id)}</td>
+      <td>${escapeHtml(c.escopo || '—').slice(0,60)}</td>
+      <td class="mono">${formatCurrency(c.valorTotal, c.moeda)}</td>
+      <td>${t.count} marco(s)</td>
+      <td>${icon('chevronRight')}</td>
+    </tr>`;
+  }).join('');
+
+  const html = `
+    <div class="card card-pad" style="margin-bottom:18px">
+      <div class="kv">
+        <dt>Razão social</dt><dd><strong>${escapeHtml(client.nome)}</strong></dd>
+        <dt>CNPJ</dt><dd class="mono">${formatCNPJ(client.cnpj)}</dd>
+        ${client.contatos && client.contatos[0] ? `<dt>Contato</dt><dd>${escapeHtml(client.contatos[0].nome||'')} ${client.contatos[0].email ? '· '+escapeHtml(client.contatos[0].email):''}</dd>` : ''}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-pad" style="padding-bottom:0"><div class="section-title">Contratos deste cliente</div></div>
+      <div class="table-wrap" style="border:none">
+        <table>
+          <thead><tr><th>Nº Contrato</th><th>Escopo</th><th>Valor</th><th>Marcos</th><th></th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="5" class="tbl-empty">Nenhum contrato para este cliente.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>`;
+  layout(html, {
+    title: client.nome, crumbs: `<a class="link" data-goto="clientes">Clientes</a> / ${formatCNPJ(client.cnpj)}`,
+    actions: `<button class="btn btn-danger btn-sm" id="btnDeleteClient" style="margin-right:8px">${icon('trash')}Excluir cliente</button><button class="btn btn-primary" data-nav="novo-contrato">${icon('plus')}Novo contrato</button>`,
+  });
+  bindGoto();
+  const delBtn = document.getElementById('btnDeleteClient');
+  if (delBtn) delBtn.addEventListener('click', () => confirmDeleteClient(client));
+}
+
+/* ---------- CONTRATOS ---------- */
+function renderContractsList() {
+  const rows = DB.contracts.map(c => {
+    const client = getClient(c.clientCnpj);
+    const bs = billingsForContract(c.id);
+    const paid = bs.filter(b => computeStatus(b) === 'pago').length;
+    return `<tr class="clickable" data-goto="contrato/${c.id}/ficha">
+      <td><strong>${escapeHtml(client ? client.nome : '—')}</strong></td>
+      <td class="mono">${escapeHtml(c.numero || '—')}</td>
+      <td>${escapeHtml(c.fornecedorNome || '—')}</td>
+      <td class="mono">${formatCurrency(c.valorTotal, c.moeda)}</td>
+      <td>${paid}/${bs.length} pagos</td>
+      <td>${icon('chevronRight')}</td>
+    </tr>`;
+  }).join('');
+
+  const html = `
+    <div class="card">
+      <div class="table-wrap" style="border:none">
+        <table>
+          <thead><tr><th>Cliente</th><th>Nº Contrato</th><th>Empresa OceanPact</th><th>Valor total</th><th>Faturamento</th><th></th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="6" class="tbl-empty">Nenhum contrato cadastrado ainda.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>`;
+  layout(html, {
+    title: 'Contratos', crumbs: `${DB.contracts.length} contrato(s)`,
+    actions: `<button class="btn btn-primary" data-nav="novo-contrato">${icon('plus')}Novo contrato</button>`,
+  });
+  bindGoto();
+}
+
+/* ---------- goto binder ---------- */
+function bindGoto() {
+  document.querySelectorAll('[data-goto]').forEach(el => {
+    el.addEventListener('click', (e) => { location.hash = '#/' + el.dataset.goto; });
+  });
+}
+/* ---------- CONTRATO DETAIL ---------- */
+let ficheEditMode = false;
+
+function renderContractDetail(id, tab) {
+  tab = tab || 'ficha';
+  const contract = getContract(id);
+  if (!contract) { layout(`<div class="empty-state"><h3>Contrato não encontrado</h3></div>`, { title: 'Contrato' }); return; }
+  const client = getClient(contract.clientCnpj);
+
+  const tabs = [
+    { key: 'ficha', label: 'Ficha do contrato' },
+    { key: 'marcos', label: 'Marcos de faturamento' },
+    { key: 'faturamento', label: 'Gerenciar faturamento' },
+  ];
+  const tabbar = tabs.map(t => `<button class="tabbtn ${tab === t.key ? 'active' : ''}" data-tab="${t.key}">${t.label}</button>`).join('');
+
+  let body = '';
+  if (tab === 'ficha') body = ficheEditMode ? renderContractFormInline(contract) : renderFichaView(contract, client);
+  else if (tab === 'marcos') body = renderMarcosTab(contract);
+  else body = renderFaturamentoTab(contract, client);
+
+  const html = `
+    <a class="link" data-goto="contratos" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:14px;font-size:13px">${icon('back')} Voltar para contratos</a>
+    <div class="tabbar">${tabbar}</div>
+    <div id="tabBody">${body}</div>
+  `;
+  layout(html, {
+    title: (client ? client.nome : 'Cliente') + ' — ' + (contract.numero || 'Contrato'),
+    crumbs: `Contrato ${escapeHtml(contract.numero || contract.id)} · ${escapeHtml(contract.fornecedorNome || '')}`,
+  });
+  bindGoto();
+  document.querySelectorAll('[data-tab]').forEach(btn => {
+    btn.addEventListener('click', () => { ficheEditMode = false; location.hash = `#/contrato/${id}/${btn.dataset.tab}`; });
+  });
+  wireContractDetailEvents(contract, tab);
+}
+
+function renderFichaView(contract, client) {
+  const ubs = (contract.unidadeNegocio || []).map(u => `<span class="pill">${escapeHtml(u)}</span>`).join(' ') || '<span class="muted">—</span>';
+  return `
+    <div class="card card-pad">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div class="section-title">Dados do contrato</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-outline btn-sm" id="btnEditFicha">${icon('edit')}Editar</button>
+          <button class="btn btn-danger btn-sm" id="btnDeleteContract">${icon('trash')}Excluir contrato</button>
+        </div>
+      </div>
+      <div class="grid grid-2">
+        <dl class="kv">
+          <dt>Cliente</dt><dd>${escapeHtml(client ? client.nome : '—')}</dd>
+          <dt>CNPJ cliente</dt><dd class="mono">${client ? formatCNPJ(client.cnpj) : '—'}</dd>
+          <dt>Empresa OceanPact</dt><dd>${escapeHtml(contract.fornecedorNome || '—')}</dd>
+          <dt>CNPJ OceanPact</dt><dd class="mono">${contract.fornecedorCnpj ? formatCNPJ(contract.fornecedorCnpj) : '—'}</dd>
+          <dt>Nº contrato</dt><dd>${escapeHtml(contract.numero || '—')}</dd>
+          <dt>Proposta</dt><dd>${escapeHtml(contract.propostaRef || '—')}</dd>
+        </dl>
+        <dl class="kv">
+          <dt>Data assinatura</dt><dd>${formatDate(contract.dataAssinatura)}</dd>
+          <dt>Início / Término</dt><dd>${formatDate(contract.dataInicio)} — ${contract.dataTermino ? formatDate(contract.dataTermino) : 'em aberto'}</dd>
+          <dt>Moeda</dt><dd>${escapeHtml(contract.moeda || '—')}</dd>
+          <dt>Valor total</dt><dd><strong>${formatCurrency(contract.valorTotal, contract.moeda)}</strong></dd>
+          <dt>Medição</dt><dd>${escapeHtml(contract.medicao || '—')}</dd>
+          <dt>Prazo pagamento</dt><dd>${contract.prazoPagamentoDias ? contract.prazoPagamentoDias + ' dias' : '—'}</dd>
+        </dl>
+      </div>
+      <div class="divider"></div>
+      <div class="field"><label>Unidade de negócio</label><div class="pill-list">${ubs}</div></div>
+      <div class="field"><label>Escopo</label><div>${escapeHtml(contract.escopo || '—')}</div></div>
+      <div class="grid grid-2">
+        <div class="field"><label>Reembolso</label><div>${escapeHtml(contract.reembolso || '—')}</div></div>
+        <div class="field"><label>Cláusula de reajuste</label><div>${escapeHtml(contract.clausulaReajuste || '—')}</div></div>
+        <div class="field"><label>Cláusula de cancelamento</label><div>${escapeHtml(contract.clausulaCancelamento || '—')}</div></div>
+        <div class="field"><label>Subcontratação</label><div>${escapeHtml(contract.subcontratacao || '—')}</div></div>
+      </div>
+      <div class="field"><label>Riscos e pontos de atenção</label><div>${escapeHtml(contract.riscos || '—')}</div></div>
+      <div class="field"><label>Observações</label><div>${escapeHtml(contract.observacoes || '—')}</div></div>
+    </div>
+    ${renderAditivosHistory(contract)}`;
+}
+
+/* ---- MARCOS TAB ---- */
+const CUSTO_KINDS = [
+  { key: 'Previsto', label: 'Custo previsto' },
+  { key: 'Realizado', label: 'Custo realizado' },
+];
+
+function custoCell(b, kind) {
+  const valField = 'custo' + kind.key;
+  const urlField = 'custo' + kind.key + 'FileUrl';
+  const nameField = 'custo' + kind.key + 'FileName';
+  const hasFile = !!b[urlField];
+  return `
+    <input type="number" step="0.01" value="${b[valField]||''}" data-mfield="${valField}" data-mid="${b.id}" placeholder="0,00" style="margin-bottom:5px">
+    ${hasFile ? `
+      <button class="btn btn-outline btn-sm btn-block" data-download-custo="${b.id}" data-kind="${kind.key}" title="${escapeHtml(b[nameField]||'')}">${icon('download')}${escapeHtml((b[nameField]||'planilha').slice(0,14))}</button>
+      <button class="btn btn-ghost btn-sm btn-block" data-upload-custo="${b.id}" data-kind="${kind.key}">Substituir</button>
+    ` : `<button class="btn btn-outline btn-sm btn-block" data-upload-custo="${b.id}" data-kind="${kind.key}">${icon('upload')}Anexar</button>`}
+    <input type="file" accept=".xlsx,.xls,.csv" data-custo-input="${b.id}" data-kind="${kind.key}" style="display:none">`;
+}
+
+function renderMarcosTab(contract) {
+  const bs = billingsForContract(contract.id);
+  const rows = bs.map(b => {
+    const valor = Number(b.valor) || 0;
+    const custoPrevisto = Number(b.custoPrevisto) || 0;
+    const custoRealizado = Number(b.custoRealizado) || 0;
+    const margem = (custo) => {
+      if (!valor) return '—';
+      const m = valor - custo;
+      const p = (m / valor * 100).toFixed(1);
+      return `<span style="color:${m<0?'var(--danger)':'var(--success)'}">${formatCurrency(m, contract.moeda)}<div class="muted" style="font-size:11px">${p}%</div></span>`;
+    };
+    return `
+    <tr>
+      <td style="width:70px"><input type="text" value="${escapeHtml(b.codigo)}" data-mfield="codigo" data-mid="${b.id}" style="width:64px"></td>
+      <td style="min-width:190px"><textarea rows="2" data-mfield="descricao" data-mid="${b.id}">${escapeHtml(b.descricao||'')}</textarea></td>
+      <td style="width:80px"><input type="text" value="${escapeHtml(b.percentual||'')}" data-mfield="percentual" data-mid="${b.id}" style="width:60px"></td>
+      <td style="width:130px"><input type="number" step="0.01" value="${b.valor||''}" data-mfield="valor" data-mid="${b.id}"></td>
+      <td style="min-width:220px"><textarea rows="2" data-mfield="gatilho" data-mid="${b.id}">${escapeHtml(b.gatilho||'')}</textarea></td>
+      <td style="width:110px"><input type="text" value="${escapeHtml(b.dataPrevisao||'')}" data-mfield="dataPrevisao" data-mid="${b.id}" placeholder="ex: TBC"></td>
+      <td style="width:150px">${custoCell(b, CUSTO_KINDS[0])}</td>
+      <td style="width:110px">${margem(custoPrevisto)}</td>
+      <td style="width:150px">${custoCell(b, CUSTO_KINDS[1])}</td>
+      <td style="width:110px">${margem(custoRealizado)}</td>
+      <td style="width:40px"><button class="icon-btn" data-del-milestone="${b.id}" title="Remover marco">${icon('trash')}</button></td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="card card-pad" style="margin-bottom:16px;background:var(--blue-pale);border:none">
+      <div style="display:flex;gap:10px;align-items:flex-start">
+        ${icon('info')}
+        <div style="font-size:12.5px">
+          <strong>Custo e margem são só para controle interno.</strong> Esses campos e as planilhas anexadas aqui <u>nunca</u> aparecem no BM gerado para o cliente — o BM (aba "Gerenciar faturamento") usa só os tokens de cobrança (valor, marco, datas). Custo previsto é o orçado; custo realizado é o apurado depois da execução — a margem de cada um é calculada separadamente.
+        </div>
+      </div>
+    </div>
+    <div class="card card-pad">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="section-title">Marcos de faturamento (Anexo B)</div>
+        <button class="btn btn-outline btn-sm" id="btnAddMilestone">${icon('plus')}Novo marco</button>
+      </div>
+      <p class="help">Edite diretamente as células. As alterações são salvas automaticamente. O campo <strong>gatilho</strong> deve descrever objetivamente o que libera o faturamento.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Marco</th><th>Descrição</th><th>%</th><th>Valor cobrado (R$)</th><th>O que libera o faturamento</th><th>Data prevista</th><th>Custo previsto</th><th>Margem prevista</th><th>Custo realizado</th><th>Margem realizada</th><th></th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="11" class="tbl-empty">Nenhum marco cadastrado.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+/* ---- FATURAMENTO TAB ---- */
+function renderFaturamentoTab(contract, client) {
+  const bs = billingsForContract(contract.id);
+  const hasTemplate = !!contract.bmTemplateUrl;
+
+  const rows = bs.map(b => {
+    const st = computeStatus(b);
+    const dateField = (label, field, val) => `
+      <div style="margin-bottom:4px">
+        <span class="muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.3px">${label}</span><br/>
+        <input type="date" value="${val || ''}" data-datefield="${field}" data-bid="${b.id}" style="padding:4px 6px;font-size:12px">
+      </div>`;
+    return `
+    <tr>
+      <td><strong>${escapeHtml(b.codigo)}</strong><div class="muted" style="max-width:220px;font-size:11.5px">${escapeHtml((b.descricao||'').slice(0,70))}</div></td>
+      <td class="mono">${formatCurrency(b.valor, contract.moeda)}<div class="muted" style="font-size:11.5px">${escapeHtml(b.percentual||'')}</div></td>
+      <td>${statusBadge(st)}</td>
+      <td>${dateField('Liberação', 'releasedDate', b.releasedDate)}</td>
+      <td>${dateField('BM enviado', 'bmSentDate', b.bmSentDate)}</td>
+      <td>${dateField('BM aprovado', 'bmApprovedDate', b.bmApprovedDate)}</td>
+      <td>${dateField('NF enviada', 'nfSentDate', b.nfSentDate)}</td>
+      <td>${dateField('Pagamento', 'paymentDate', b.paymentDate)}</td>
+      <td style="min-width:150px">
+        ${!b.releasedDate ? `<button class="btn btn-accent btn-sm btn-block" data-release="${b.id}">${icon('bolt')}Liberar</button>` : ''}
+        ${b.releasedDate ? `<button class="btn btn-outline btn-sm btn-block" data-genbm="${b.id}" ${!hasTemplate ? 'disabled title="Cadastre o modelo de BM abaixo"' : ''}>${icon('sheet')}Gerar BM</button>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+
+  const tokenRows = PLACEHOLDER_TOKENS.map(([tok, desc]) => `<tr><td class="mono">${tok}</td><td class="muted">${desc}</td></tr>`).join('');
+
+  return `
+    <div class="card card-pad" style="margin-bottom:18px">
+      <div class="section-title">Modelo de BM (Excel)</div>
+      ${hasTemplate ? `
+        <div style="display:flex;align-items:center;gap:10px;justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:8px">${icon('sheet')}<div><strong>${escapeHtml(contract.bmTemplateName||'modelo.xlsx')}</strong><div class="muted" style="font-size:11.5px">Modelo cadastrado para este contrato</div></div></div>
+          <button class="btn btn-outline btn-sm" id="btnReplaceTemplate">Substituir modelo</button>
+        </div>` : `
+        <div class="upload-zone" id="templateDrop" style="padding:22px">
+          ${icon('upload')}
+          <div style="font-weight:600;color:var(--navy-darker);margin-top:4px">Envie o modelo de BM em Excel deste contrato</div>
+          <div class="help">Use tokens como <span class="mono">{{MARCO_CODIGO}}</span> nas células — veja a lista completa abaixo.</div>
+        </div>`}
+      <input type="file" id="templateInput" accept=".xlsx" style="display:none">
+      <details style="margin-top:12px">
+        <summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--navy)">Ver tokens disponíveis para o modelo</summary>
+        <div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Token</th><th>Preenchido com</th></tr></thead><tbody>${tokenRows}</tbody></table></div>
+      </details>
+    </div>
+    <div class="card">
+      <div class="card-pad" style="padding-bottom:0"><div class="section-title">Status de cada marco</div></div>
+      <div class="table-wrap" style="border:none">
+        <table>
+          <thead><tr><th>Marco</th><th>Valor</th><th>Status</th><th>Liberação</th><th>BM enviado</th><th>BM aprovado</th><th>NF enviada</th><th>Pagamento</th><th>Ação</th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="9" class="tbl-empty">Cadastre marcos na aba "Marcos de faturamento" primeiro.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+/* ---------- inline contract edit form (Ficha tab) ---------- */
+function renderContractFormInline(contract) {
+  const ubOptions = BUSINESS_UNITS.map(u => `
+    <label class="checkbox-row"><input type="checkbox" value="${u}" class="ub-check" ${((contract.unidadeNegocio||[]).includes(u)) ? 'checked' : ''}> ${u}</label>`).join('');
+  return `
+    <form class="card card-pad" id="fichaEditForm">
+      <div class="section-title">Editar dados do contrato</div>
+      <div class="field-row">
+        <div class="field"><label>Empresa OceanPact (contratada)</label><input type="text" name="fornecedorNome" value="${escapeHtml(contract.fornecedorNome||'')}"></div>
+        <div class="field"><label>CNPJ OceanPact</label><input type="text" name="fornecedorCnpj" value="${escapeHtml(contract.fornecedorCnpj||'')}"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Nº do contrato</label><input type="text" name="numero" value="${escapeHtml(contract.numero||'')}"></div>
+        <div class="field"><label>Referência da proposta</label><input type="text" name="propostaRef" value="${escapeHtml(contract.propostaRef||'')}"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Data assinatura</label><input type="date" name="dataAssinatura" value="${contract.dataAssinatura||''}"></div>
+        <div class="field"><label>Data início</label><input type="date" name="dataInicio" value="${contract.dataInicio||''}"></div>
+        <div class="field"><label>Data término</label><input type="date" name="dataTermino" value="${contract.dataTermino||''}"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Moeda</label>
+          <select name="moeda"><option ${contract.moeda==='BRL'?'selected':''}>BRL</option><option ${contract.moeda==='USD'?'selected':''}>USD</option><option ${contract.moeda==='OUTRO'?'selected':''}>OUTRO</option></select>
+        </div>
+        <div class="field"><label>Valor total</label><input type="number" step="0.01" name="valorTotal" value="${contract.valorTotal||''}"></div>
+        <div class="field"><label>Medição</label><input type="text" name="medicao" value="${escapeHtml(contract.medicao||'')}"></div>
+        <div class="field"><label>Prazo pagamento (dias)</label><input type="number" name="prazoPagamentoDias" value="${contract.prazoPagamentoDias||30}"></div>
+      </div>
+      <div class="field"><label>Unidade de negócio</label><div class="pill-list" style="gap:14px">${ubOptions}</div></div>
+      <div class="field"><label>Escopo</label><textarea name="escopo">${escapeHtml(contract.escopo||'')}</textarea></div>
+      <div class="field-row">
+        <div class="field"><label>Reembolso</label><textarea name="reembolso">${escapeHtml(contract.reembolso||'')}</textarea></div>
+        <div class="field"><label>Cláusula de reajuste</label><textarea name="clausulaReajuste">${escapeHtml(contract.clausulaReajuste||'')}</textarea></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Cláusula de cancelamento</label><textarea name="clausulaCancelamento">${escapeHtml(contract.clausulaCancelamento||'')}</textarea></div>
+        <div class="field"><label>Subcontratação</label><textarea name="subcontratacao">${escapeHtml(contract.subcontratacao||'')}</textarea></div>
+      </div>
+      <div class="field"><label>Riscos e pontos de atenção</label><textarea name="riscos">${escapeHtml(contract.riscos||'')}</textarea></div>
+      <div class="field"><label>Observações</label><textarea name="observacoes">${escapeHtml(contract.observacoes||'')}</textarea></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button type="button" class="btn btn-ghost" id="btnCancelEdit">Cancelar</button>
+        <button type="submit" class="btn btn-primary">${icon('check')}Salvar alterações</button>
+      </div>
+    </form>`;
+}
+
+/* ---------- exclusão de contrato ---------- */
+function confirmDeleteContract(contract) {
+  const expected = (contract.numero || contract.id).toString();
+  openModal(`
+    <div class="modal-head"><h3>Excluir contrato</h3><button class="icon-btn" id="btnCloseDelContract">${icon('x')}</button></div>
+    <div class="modal-body">
+      <p class="help" style="margin-top:0;color:var(--danger)">${icon('alert')} Isso vai apagar definitivamente o contrato <strong>${escapeHtml(expected)}</strong>, todos os seus marcos de faturamento, o modelo de BM e as planilhas de custo anexadas. Não é possível desfazer.</p>
+      <div class="field"><label>Digite <span class="mono">${escapeHtml(expected)}</span> para confirmar</label><input type="text" id="deleteConfirmInput" autocomplete="off"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="btnCancelDelContract">Cancelar</button>
+      <button class="btn btn-danger" id="btnConfirmDelContract" disabled>${icon('trash')}Excluir definitivamente</button>
+    </div>`);
+  document.getElementById('btnCloseDelContract').addEventListener('click', closeModal);
+  document.getElementById('btnCancelDelContract').addEventListener('click', closeModal);
+  const input = document.getElementById('deleteConfirmInput');
+  const btn = document.getElementById('btnConfirmDelContract');
+  input.addEventListener('input', () => { btn.disabled = input.value.trim() !== expected; });
+  btn.addEventListener('click', async () => {
+    btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> Excluindo…`;
+    try {
+      await deleteContract(contract);
+      closeModal();
+      toast('Contrato excluído.', 'ok');
+      location.hash = '#/contratos';
+    } catch (err) {
+      toast('Erro ao excluir contrato: ' + (err.message || err), 'err');
+      closeModal();
+    }
+  });
+}
+
+async function deleteContract(contract) {
+  const bs = billingsForContract(contract.id);
+  for (const b of bs) {
+    if (b.custoPrevistoFilePath) await deleteFileFromStorage(b.custoPrevistoFilePath);
+    if (b.custoRealizadoFilePath) await deleteFileFromStorage(b.custoRealizadoFilePath);
+  }
+  if (contract.bmTemplatePath) await deleteFileFromStorage(contract.bmTemplatePath);
+  DB.billings = DB.billings.filter(b => b.contractId !== contract.id);
+  DB.contracts = DB.contracts.filter(c => c.id !== contract.id);
+  await dbSave('billings');
+  await dbSave('contracts');
+}
+
+/* ---------- event wiring ---------- */
+function wireContractDetailEvents(contract, tab) {
+  if (tab === 'ficha') {
+    if (!ficheEditMode) {
+      const editBtn = document.getElementById('btnEditFicha');
+      if (editBtn) editBtn.addEventListener('click', () => { ficheEditMode = true; render(); });
+      const aditivoBtn = document.getElementById('btnOpenAditivo');
+      if (aditivoBtn) aditivoBtn.addEventListener('click', () => openAditivoModal(contract.id));
+      const delBtn = document.getElementById('btnDeleteContract');
+      if (delBtn) delBtn.addEventListener('click', () => confirmDeleteContract(contract));
+    } else {
+      document.getElementById('btnCancelEdit').addEventListener('click', () => { ficheEditMode = false; render(); });
+      document.getElementById('fichaEditForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const updated = { ...contract };
+        ['fornecedorNome','fornecedorCnpj','numero','propostaRef','dataAssinatura','dataInicio','dataTermino','moeda','medicao','escopo','reembolso','clausulaReajuste','clausulaCancelamento','subcontratacao','riscos','observacoes'].forEach(f => updated[f] = fd.get(f) || '');
+        updated.valorTotal = Number(fd.get('valorTotal')) || 0;
+        updated.prazoPagamentoDias = Number(fd.get('prazoPagamentoDias')) || 30;
+        updated.unidadeNegocio = Array.from(document.querySelectorAll('.ub-check:checked')).map(el => el.value);
+        Object.assign(contract, updated);
+        await dbSave('contracts');
+        ficheEditMode = false;
+        toast('Ficha do contrato atualizada.', 'ok');
+        render();
+      });
+    }
+  }
+
+  if (tab === 'marcos') {
+    document.querySelectorAll('[data-mfield]').forEach(el => {
+      el.addEventListener('change', async () => {
+        const b = DB.billings.find(x => x.id === el.dataset.mid);
+        if (!b) return;
+        const field = el.dataset.mfield;
+        const numericFields = ['valor', 'custoPrevisto', 'custoRealizado'];
+        b[field] = numericFields.includes(field) ? Number(el.value) || 0 : el.value;
+        await dbSave('billings');
+        toast('Marco atualizado.', 'ok');
+        render();
+      });
+    });
+    document.querySelectorAll('[data-upload-custo]').forEach(el => {
+      el.addEventListener('click', () => {
+        document.querySelector(`[data-custo-input="${el.dataset.uploadCusto}"][data-kind="${el.dataset.kind}"]`).click();
+      });
+    });
+    document.querySelectorAll('[data-custo-input]').forEach(el => {
+      el.addEventListener('change', async () => {
+        const file = el.files[0];
+        if (!file) return;
+        const b = DB.billings.find(x => x.id === el.dataset.custoInput);
+        if (!b) return;
+        const kind = el.dataset.kind;
+        const pathField = 'custo' + kind + 'FilePath';
+        try {
+          toast('Enviando planilha…', 'ok');
+          if (b[pathField]) await deleteFileFromStorage(b[pathField]);
+          const path = `custos/${contract.id}/${b.id}-${kind}-${Date.now()}-${file.name}`;
+          const { url } = await uploadFileToStorage(path, file);
+          b['custo' + kind + 'FileUrl'] = url;
+          b['custo' + kind + 'FilePath'] = path;
+          b['custo' + kind + 'FileName'] = file.name;
+          await dbSave('billings');
+          toast('Planilha de custo ' + kind.toLowerCase() + ' anexada ao marco ' + b.codigo + '.', 'ok');
+          render();
+        } catch (err) {
+          toast('Erro ao enviar o arquivo: ' + (err.message || err), 'err');
+        }
+      });
+    });
+    document.querySelectorAll('[data-download-custo]').forEach(el => {
+      el.addEventListener('click', async () => {
+        const b = DB.billings.find(x => x.id === el.dataset.downloadCusto);
+        if (!b) return;
+        const kind = el.dataset.kind;
+        const urlField = 'custo' + kind + 'FileUrl', nameField = 'custo' + kind + 'FileName';
+        if (!b[urlField]) return;
+        try { await downloadFromUrl(b[urlField], b[nameField]); }
+        catch (err) { toast(err.message || 'Erro ao baixar arquivo.', 'err'); }
+      });
+    });
+    document.querySelectorAll('[data-del-milestone]').forEach(el => {
+      el.addEventListener('click', async () => {
+        if (!confirm('Remover este marco de faturamento? Esta ação não pode ser desfeita.')) return;
+        DB.billings = DB.billings.filter(b => b.id !== el.dataset.delMilestone);
+        await dbSave('billings');
+        toast('Marco removido.', 'ok');
+        render();
+      });
+    });
+    const addBtn = document.getElementById('btnAddMilestone');
+    if (addBtn) addBtn.addEventListener('click', async () => {
+      const bs = billingsForContract(contract.id);
+      DB.billings.push({
+        id: uid('bm'), contractId: contract.id, codigo: 'BM' + (bs.length + 1),
+        descricao: '', percentual: '', valor: 0, gatilho: '', dataPrevisao: '', origin: 'manual',
+        releasedDate: '', bmGeneratedDate: '', bmSentDate: '', bmApprovedDate: '', nfSentDate: '', paymentDate: '',
+      });
+      await dbSave('billings');
+      render();
+    });
+  }
+
+  if (tab === 'faturamento') {
+    const client = getClient(contract.clientCnpj);
+    document.querySelectorAll('[data-datefield]').forEach(el => {
+      el.addEventListener('change', async () => {
+        const b = DB.billings.find(x => x.id === el.dataset.bid);
+        if (!b) return;
+        b[el.dataset.datefield] = el.value;
+        await dbSave('billings');
+        toast('Data atualizada.', 'ok');
+        render();
+      });
+    });
+    document.querySelectorAll('[data-release]').forEach(el => {
+      el.addEventListener('click', async () => {
+        const b = DB.billings.find(x => x.id === el.dataset.release);
+        if (!b) return;
+        b.releasedDate = todayISO();
+        await dbSave('billings');
+        toast('Faturamento liberado. Já pode gerar o BM.', 'ok');
+        render();
+      });
+    });
+    document.querySelectorAll('[data-genbm]').forEach(el => {
+      el.addEventListener('click', async () => {
+        const b = DB.billings.find(x => x.id === el.dataset.genbm);
+        if (!b) return;
+        try {
+          const fileName = await generateBmFile(client, contract, b);
+          if (!b.bmGeneratedDate) b.bmGeneratedDate = todayISO();
+          await dbSave('billings');
+          toast('BM gerado: ' + fileName, 'ok');
+          render();
+        } catch (err) {
+          toast(err.message || 'Erro ao gerar o BM.', 'err');
+        }
+      });
+    });
+
+    const templateInput = document.getElementById('templateInput');
+    const wireTemplateUpload = () => {
+      if (!templateInput) return;
+      templateInput.addEventListener('change', async () => {
+        const file = templateInput.files[0];
+        if (!file) return;
+        try {
+          toast('Enviando modelo…', 'ok');
+          if (contract.bmTemplatePath) await deleteFileFromStorage(contract.bmTemplatePath);
+          const path = `bm-templates/${contract.id}/${Date.now()}-${file.name}`;
+          const { url } = await uploadFileToStorage(path, file);
+          contract.bmTemplateUrl = url;
+          contract.bmTemplatePath = path;
+          contract.bmTemplateName = file.name;
+          await dbSave('contracts');
+          toast('Modelo de BM cadastrado.', 'ok');
+          render();
+        } catch (err) {
+          toast('Erro ao enviar o modelo: ' + (err.message || err), 'err');
+        }
+      });
+    };
+    const dropZone = document.getElementById('templateDrop');
+    if (dropZone) dropZone.addEventListener('click', () => templateInput.click());
+    const replaceBtn = document.getElementById('btnReplaceTemplate');
+    if (replaceBtn) replaceBtn.addEventListener('click', () => templateInput.click());
+    wireTemplateUpload();
+  }
+}
+/* ---------- ADITIVOS (contract amendments) ---------- */
+let aditivoState = null;
+
+function resetAditivoState(contractId) {
+  aditivoState = {
+    contractId, step: 1, fileName: '', fileHash: '', progressMsg: '', error: null,
+    parsed: null,
+    marcosNovos: [], marcosAlterados: [], alteracoes: [],
+  };
+}
+
+function openAditivoModal(contractId) {
+  resetAditivoState(contractId);
+  renderAditivoModal();
+}
+
+function renderAditivoModal() {
+  let body;
+  if (aditivoState.step === 1) body = aditivoStep1Html();
+  else if (aditivoState.step === 2) body = aditivoStep2Html();
+  else body = aditivoStep3Html();
+  openModal(`
+    <div class="modal-head">
+      <h3>Registrar aditivo</h3>
+      <button class="icon-btn" id="btnCloseAditivo">${icon('x')}</button>
+    </div>
+    ${body}
+  `);
+  document.getElementById('btnCloseAditivo').addEventListener('click', closeModal);
+  wireAditivoEvents();
+}
+
+function aditivoStep1Html() {
+  return `
+    <div class="modal-body">
+      <p class="help" style="margin-top:0">Envie o PDF do termo aditivo (prazo, valores, quantidades ou novas linhas de serviço). A IA vai comparar com os dados atuais do contrato e propor as alterações — nada é aplicado sem sua confirmação, e o contrato original permanece registrado no histórico.</p>
+      <div class="upload-zone" id="aditivoDrop" style="padding:26px">
+        ${icon('upload')}
+        <div style="font-weight:700;color:var(--navy-darker);margin-top:2px">Clique para selecionar o PDF do aditivo</div>
+      </div>
+      <input type="file" id="aditivoInput" accept="application/pdf" style="display:none">
+      ${aditivoState.error ? `<div class="help" style="color:var(--danger);margin-top:10px">${icon('alert')} ${escapeHtml(aditivoState.error)}</div>` : ''}
+    </div>`;
+}
+
+function aditivoStep2Html() {
+  return `
+    <div class="modal-body" style="text-align:center;padding:44px 20px">
+      <div class="spinner spinner-dark" style="width:28px;height:28px;border-width:3px;margin:0 auto 14px"></div>
+      <div id="aditivoProgressMsg" style="font-weight:700;color:var(--navy-darker)">${escapeHtml(aditivoState.progressMsg || 'Processando…')}</div>
+    </div>`;
+}
+
+function aditivoStep3Html() {
+  const contract = getContract(aditivoState.contractId);
+  const p = aditivoState.parsed;
+  const tiposHtml = (p.tipos || []).map(t => `<span class="pill">${escapeHtml(t)}</span>`).join(' ');
+
+  const alteracoesRows = aditivoState.alteracoes.map((a, i) => {
+    const label = ADITIVO_FIELD_LABELS[a.campo] || a.campo;
+    const atual = contract[a.campo];
+    const isDate = a.campo.toLowerCase().includes('data');
+    const isMoney = a.campo === 'valorTotal';
+    return `<tr>
+      <td style="width:34px"><input type="checkbox" data-aidx="${i}" class="alt-check" checked></td>
+      <td>${escapeHtml(label)}</td>
+      <td class="muted">${isDate ? formatDate(atual) : isMoney ? formatCurrency(atual, contract.moeda) : escapeHtml(String(atual ?? '—')).slice(0,80)}</td>
+      <td>${isDate
+        ? `<input type="date" data-aidx="${i}" class="alt-value" value="${a.valorNovo || ''}">`
+        : isMoney
+        ? `<input type="number" step="0.01" data-aidx="${i}" class="alt-value" value="${a.valorNovo || ''}">`
+        : `<textarea rows="2" data-aidx="${i}" class="alt-value">${escapeHtml(a.valorNovo || '')}</textarea>`}
+      </td>
+    </tr>`;
+  }).join('');
+
+  const novosRows = aditivoState.marcosNovos.map((m, i) => `
+    <tr>
+      <td style="width:34px"><input type="checkbox" data-nidx="${i}" class="novo-check" checked></td>
+      <td style="width:60px"><input type="text" value="${escapeHtml(m.codigo||'')}" data-nidx="${i}" data-nf="codigo" style="width:52px"></td>
+      <td style="min-width:160px"><textarea rows="2" data-nidx="${i}" data-nf="descricao">${escapeHtml(m.descricao||'')}</textarea></td>
+      <td style="width:120px"><input type="number" step="0.01" value="${m.valor||''}" data-nidx="${i}" data-nf="valor"></td>
+      <td style="min-width:200px"><textarea rows="2" data-nidx="${i}" data-nf="gatilho">${escapeHtml(m.gatilho||'')}</textarea></td>
+    </tr>`).join('');
+
+  const alteradosRows = aditivoState.marcosAlterados.map((m, i) => {
+    const billing = DB.billings.find(b => b.contractId === contract.id && b.codigo === m.codigoExistente);
+    const atual = billing ? billing[m.campo] : '—';
+    return `<tr>
+      <td style="width:34px"><input type="checkbox" data-midx="${i}" class="malt-check" checked></td>
+      <td><strong>${escapeHtml(m.codigoExistente)}</strong></td>
+      <td>${escapeHtml(m.campo)}</td>
+      <td class="muted">${escapeHtml(String(atual ?? '—')).slice(0,60)}</td>
+      <td><textarea rows="1" data-midx="${i}" class="malt-value">${escapeHtml(String(m.valorNovo ?? ''))}</textarea></td>
+      <td class="muted" style="font-size:11.5px">${escapeHtml(m.motivo || '')}</td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="modal-body">
+      <div class="card card-pad" style="background:var(--blue-pale);border:none;margin-bottom:16px">
+        <div style="font-weight:700;color:var(--navy-darker);margin-bottom:6px">${icon('sparkle')} Resumo do aditivo</div>
+        <div style="font-size:13px">${escapeHtml(p.resumo || '—')}</div>
+        ${tiposHtml ? `<div class="pill-list" style="margin-top:8px">${tiposHtml}</div>` : ''}
+      </div>
+
+      ${aditivoState.alteracoes.length ? `
+      <div class="section-title">Alterações no contrato</div>
+      <div class="table-wrap" style="margin-bottom:16px">
+        <table><thead><tr><th></th><th>Campo</th><th>Valor atual</th><th>Valor novo</th></tr></thead>
+        <tbody>${alteracoesRows}</tbody></table>
+      </div>` : ''}
+
+      ${aditivoState.marcosNovos.length ? `
+      <div class="section-title">Novos marcos de faturamento</div>
+      <div class="table-wrap" style="margin-bottom:16px">
+        <table><thead><tr><th></th><th>Marco</th><th>Descrição</th><th>Valor</th><th>Gatilho</th></tr></thead>
+        <tbody>${novosRows}</tbody></table>
+      </div>` : ''}
+
+      ${aditivoState.marcosAlterados.length ? `
+      <div class="section-title">Marcos existentes alterados</div>
+      <div class="table-wrap" style="margin-bottom:16px">
+        <table><thead><tr><th></th><th>Marco</th><th>Campo</th><th>Valor atual</th><th>Valor novo</th><th>Motivo</th></tr></thead>
+        <tbody>${alteradosRows}</tbody></table>
+      </div>` : ''}
+
+      ${!aditivoState.alteracoes.length && !aditivoState.marcosNovos.length && !aditivoState.marcosAlterados.length
+        ? `<div class="help">A IA não identificou alterações estruturadas neste PDF. Verifique se é mesmo um aditivo, ou registre as mudanças manualmente na Ficha/Marcos do contrato.</div>` : ''}
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="btnCancelAditivo">Cancelar</button>
+      <button class="btn btn-primary" id="btnApplyAditivo">${icon('check')}Aplicar alterações selecionadas</button>
+    </div>`;
+}
+
+function wireAditivoEvents() {
+  if (aditivoState.step === 1) {
+    const input = document.getElementById('aditivoInput');
+    const drop = document.getElementById('aditivoDrop');
+    drop.addEventListener('click', () => input.click());
+    input.addEventListener('change', () => { if (input.files[0]) handleAditivoUpload(input.files[0]); });
+  }
+  if (aditivoState.step === 3) {
+    document.getElementById('btnCancelAditivo').addEventListener('click', closeModal);
+    document.getElementById('btnApplyAditivo').addEventListener('click', applyAditivo);
+    document.querySelectorAll('[data-nidx]').forEach(el => {
+      el.addEventListener('change', () => {
+        const i = Number(el.dataset.nidx);
+        if (el.dataset.nf) aditivoState.marcosNovos[i][el.dataset.nf] = el.dataset.nf === 'valor' ? Number(el.value)||0 : el.value;
+      });
+    });
+  }
+}
+
+async function handleAditivoUpload(file) {
+  const contract = getContract(aditivoState.contractId);
+  aditivoState.fileName = file.name;
+  aditivoState.step = 2;
+  aditivoState.progressMsg = 'Verificando duplicidade…';
+  renderAditivoModal();
+  try {
+    const buf = await file.arrayBuffer();
+    const hash = await sha256Hex(buf);
+    const already = (contract.aditivos || []).find(a => a.sourceHash === hash);
+    if (already) {
+      aditivoState.step = 1;
+      aditivoState.error = `Este PDF já foi registrado como "${already.label}" em ${formatDate(already.appliedAt ? already.appliedAt.slice(0,10) : '')}.`;
+      renderAditivoModal();
+      return;
+    }
+    aditivoState.fileHash = hash;
+    aditivoState.progressMsg = 'Lendo o PDF…';
+    renderAditivoModal();
+    const text = await extractPdfText(file, (cur, total) => {
+      aditivoState.progressMsg = `Lendo página ${cur} de ${total}…`;
+      const el = document.getElementById('aditivoProgressMsg');
+      if (el) el.textContent = aditivoState.progressMsg;
+    });
+    aditivoState.progressMsg = 'Comparando com o contrato atual…';
+    renderAditivoModal();
+    const context = {
+      contratoAtual: {
+        numero: contract.numero, dataInicio: contract.dataInicio, dataTermino: contract.dataTermino,
+        valorTotal: contract.valorTotal, moeda: contract.moeda, escopo: contract.escopo,
+        medicao: contract.medicao, prazoPagamentoDias: contract.prazoPagamentoDias,
+      },
+      marcosAtuais: billingsForContract(contract.id).map(b => ({ codigo: b.codigo, descricao: b.descricao, percentual: b.percentual, valor: b.valor, gatilho: b.gatilho })),
+    };
+    const parsed = await callClaudeAditivoExtraction(context, text);
+    aditivoState.parsed = parsed;
+    aditivoState.alteracoes = Array.isArray(parsed.alteracoes) ? parsed.alteracoes.filter(a => ADITIVO_FIELD_LABELS[a.campo]) : [];
+    aditivoState.marcosNovos = Array.isArray(parsed.marcosNovos) ? parsed.marcosNovos.map(m => ({ ...m, valor: Number(m.valor)||0 })) : [];
+    aditivoState.marcosAlterados = Array.isArray(parsed.marcosAlterados) ? parsed.marcosAlterados : [];
+    aditivoState.step = 3;
+    renderAditivoModal();
+  } catch (err) {
+    console.error(err);
+    aditivoState.step = 1;
+    aditivoState.error = (err && err.message) || 'Não foi possível processar o aditivo.';
+    renderAditivoModal();
+  }
+}
+
+async function applyAditivo() {
+  const contract = getContract(aditivoState.contractId);
+  const log = { id: uid('adt'), label: 'Aditivo ' + ((contract.aditivos||[]).length + 1), appliedAt: new Date().toISOString(), fileName: aditivoState.fileName, sourceHash: aditivoState.fileHash, resumo: aditivoState.parsed.resumo || '', tipos: aditivoState.parsed.tipos || [], changes: [], milestonesAdded: [], milestonesChanged: [] };
+
+  document.querySelectorAll('.alt-check').forEach(cb => {
+    const i = Number(cb.dataset.aidx);
+    const a = aditivoState.alteracoes[i];
+    const valEl = document.querySelector(`.alt-value[data-aidx="${i}"]`);
+    const newVal = a.campo === 'valorTotal' ? Number(valEl.value)||0 : valEl.value;
+    if (cb.checked) {
+      log.changes.push({ campo: a.campo, label: ADITIVO_FIELD_LABELS[a.campo], before: contract[a.campo], after: newVal });
+      contract[a.campo] = newVal;
+    }
+  });
+
+  document.querySelectorAll('.novo-check').forEach(cb => {
+    const i = Number(cb.dataset.nidx);
+    if (!cb.checked) return;
+    const m = aditivoState.marcosNovos[i];
+    const id = uid('bm');
+    DB.billings.push({
+      id, contractId: contract.id, codigo: m.codigo || ('BM'+(billingsForContract(contract.id).length+1)),
+      descricao: m.descricao || '', percentual: m.percentual || '', valor: Number(m.valor)||0,
+      gatilho: m.gatilho || '', dataPrevisao: m.dataPrevisao || '', origin: log.id,
+      releasedDate: '', bmGeneratedDate: '', bmSentDate: '', bmApprovedDate: '', nfSentDate: '', paymentDate: '',
+    });
+    log.milestonesAdded.push(id);
+  });
+
+  document.querySelectorAll('.malt-check').forEach(cb => {
+    const i = Number(cb.dataset.midx);
+    if (!cb.checked) return;
+    const m = aditivoState.marcosAlterados[i];
+    const billing = DB.billings.find(b => b.contractId === contract.id && b.codigo === m.codigoExistente);
+    if (!billing) return;
+    const valEl = document.querySelector(`.malt-value[data-midx="${i}"]`);
+    const newVal = m.campo === 'valor' ? Number(valEl.value)||0 : valEl.value;
+    log.milestonesChanged.push({ codigo: m.codigoExistente, campo: m.campo, before: billing[m.campo], after: newVal });
+    billing[m.campo] = newVal;
+  });
+
+  contract.aditivos = contract.aditivos || [];
+  contract.aditivos.push(log);
+
+  await dbSave('contracts');
+  await dbSave('billings');
+  closeModal();
+  toast('Aditivo registrado e alterações aplicadas.', 'ok');
+  ficheEditMode = false;
+  render();
+}
+
+/* ---------- history timeline (shown in Ficha tab) ---------- */
+function renderAditivosHistory(contract) {
+  const items = [];
+  items.push({
+    date: contract.createdAt || null,
+    title: 'Contrato original cadastrado',
+    body: `Valor total: ${formatCurrency(contract.valorTotal, contract.moeda)} · Término: ${contract.dataTermino ? formatDate(contract.dataTermino) : 'em aberto'}`,
+  });
+  (contract.aditivos || []).forEach(a => {
+    const changesHtml = (a.changes || []).map(c => `<li>${escapeHtml(c.label)}: <span class="muted">${escapeHtml(String(c.before ?? '—'))}</span> → <strong>${escapeHtml(String(c.after ?? '—'))}</strong></li>`).join('');
+    const milestonesHtml = (a.milestonesAdded || []).length ? `<li>${a.milestonesAdded.length} novo(s) marco(s) de faturamento adicionado(s)</li>` : '';
+    const milestonesChangedHtml = (a.milestonesChanged || []).map(c => `<li>Marco ${escapeHtml(c.codigo)} — ${escapeHtml(c.campo)}: <span class="muted">${escapeHtml(String(c.before ?? '—'))}</span> → <strong>${escapeHtml(String(c.after ?? '—'))}</strong></li>`).join('');
+    items.push({
+      date: a.appliedAt,
+      title: a.label + (a.tipos && a.tipos.length ? ' · ' + a.tipos.join(', ') : ''),
+      body: `${escapeHtml(a.resumo || '')}${(changesHtml || milestonesHtml || milestonesChangedHtml) ? `<ul style="margin:8px 0 0;padding-left:18px;font-size:12.5px">${changesHtml}${milestonesHtml}${milestonesChangedHtml}</ul>` : ''}`,
+    });
+  });
+
+  const rows = items.map(it => `
+    <div style="display:flex;gap:14px;padding:12px 0;border-bottom:1px solid var(--border)">
+      <div style="width:110px;flex-shrink:0;font-size:12px;color:var(--text-muted);padding-top:1px">${it.date ? formatDate(it.date.slice(0,10)) : '—'}</div>
+      <div style="flex:1">
+        <div style="font-weight:700;color:var(--navy-darker);font-size:13px">${escapeHtml(it.title)}</div>
+        <div style="font-size:12.5px;margin-top:2px">${it.body}</div>
+      </div>
+    </div>`).join('');
+
+  return `
+    <div class="card card-pad" style="margin-top:18px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="section-title">Histórico do contrato</div>
+        <button class="btn btn-outline btn-sm" id="btnOpenAditivo">${icon('upload')}Registrar aditivo</button>
+      </div>
+      <div>${rows}</div>
+    </div>`;
+}
+/* ---------- ADMIN: gestão de usuários ---------- */
+async function fetchAllMembers() {
+  const { db, fb } = window.__firebase;
+  const snap = await fb.getDocs(fb.collection(db, MEMBERS_COL));
+  return snap.docs.map(d => ({ email: d.id, ...d.data() })).sort((a, b) => (a.nome||'').localeCompare(b.nome||''));
+}
+
+async function renderAdminPage() {
+  if (!isAdminUser()) {
+    layout(`<div class="empty-state"><h3>Acesso restrito</h3><p>Esta página é apenas para administradores.</p></div>`, { title: 'Administração' });
+    return;
+  }
+  layout(`<div class="card card-pad" style="text-align:center;padding:40px"><div class="spinner spinner-dark" style="width:24px;height:24px;border-width:3px;margin:0 auto"></div></div>`, { title: 'Usuários com acesso ao sistema' });
+  let members = [];
+  try { members = await fetchAllMembers(); }
+  catch (err) { toast('Erro ao carregar usuários: ' + (err.message||err), 'err'); }
+  renderAdminPageBody(members);
+}
+
+function memberStatusBadge(status) {
+  const map = { convidado: ['st-convidado', 'Convite enviado'], ativo: ['st-ativo', 'Ativo'], revogado: ['st-revogado', 'Revogado'] };
+  const [cls, label] = map[status] || ['st-pendente', status || '—'];
+  return `<span class="badge ${cls}"><span class="dot"></span>${label}</span>`;
+}
+
+function renderAdminPageBody(members) {
+  const rows = members.map(m => `
+    <tr>
+      <td><strong>${escapeHtml(m.nome||'—')}</strong>${m.email === currentMember.email ? ' <span class="muted" style="font-size:11px">(você)</span>' : ''}</td>
+      <td class="mono">${escapeHtml(m.email)}</td>
+      <td>
+        <select data-role-select="${escapeHtml(m.email)}" ${m.email === currentMember.email ? 'disabled title="Você não pode alterar seu próprio papel"' : ''}>
+          <option value="usuario" ${m.role==='usuario'?'selected':''}>Usuário</option>
+          <option value="admin" ${m.role==='admin'?'selected':''}>Admin</option>
+        </select>
+      </td>
+      <td>${memberStatusBadge(m.status)}</td>
+      <td style="min-width:220px">
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${m.status !== 'ativo' ? `<button class="btn btn-outline btn-sm" data-resend="${escapeHtml(m.email)}">${icon('mail')}Reenviar convite</button>` : ''}
+          ${m.status !== 'revogado' ? `<button class="btn btn-danger btn-sm" data-revoke="${escapeHtml(m.email)}" ${m.email === currentMember.email ? 'disabled' : ''}>${icon('ban')}Revogar</button>` : `<button class="btn btn-outline btn-sm" data-reactivate="${escapeHtml(m.email)}">Reativar</button>`}
+        </div>
+      </td>
+    </tr>`).join('');
+
+  const html = `
+    <div class="card">
+      <div class="card-pad" style="padding-bottom:0;display:flex;justify-content:space-between;align-items:center">
+        <div class="section-title">Usuários com acesso ao sistema</div>
+      </div>
+      <div class="table-wrap" style="border:none">
+        <table>
+          <thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Status</th><th>Ações</th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="5" class="tbl-empty">Nenhum usuário cadastrado ainda.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  layout(html, {
+    title: 'Usuários com acesso ao sistema',
+    crumbs: `${members.length} usuário(s) cadastrado(s)`,
+    actions: `<button class="btn btn-primary" id="btnInvite">${icon('plus')}Convidar pessoa</button>`,
+  });
+  wireAdminEvents();
+}
+
+function wireAdminEvents() {
+  const inviteBtn = document.getElementById('btnInvite');
+  if (inviteBtn) inviteBtn.addEventListener('click', openInviteModal);
+
+  document.querySelectorAll('[data-role-select]').forEach(el => {
+    el.addEventListener('change', async () => {
+      const email = el.dataset.roleSelect;
+      try {
+        const { db, fb } = window.__firebase;
+        await fb.setDoc(fb.doc(db, MEMBERS_COL, email), { role: el.value }, { merge: true });
+        toast('Papel atualizado.', 'ok');
+      } catch (err) { toast('Erro ao atualizar papel: ' + (err.message||err), 'err'); }
+    });
+  });
+
+  document.querySelectorAll('[data-resend]').forEach(el => {
+    el.addEventListener('click', async () => {
+      try { await sendInviteEmail(el.dataset.resend); toast('Convite reenviado para ' + el.dataset.resend + '.', 'ok'); }
+      catch (err) { toast('Erro ao reenviar convite: ' + (err.message||err), 'err'); }
+    });
+  });
+
+  document.querySelectorAll('[data-revoke]').forEach(el => {
+    el.addEventListener('click', async () => {
+      if (!confirm('Revogar o acesso de ' + el.dataset.revoke + '? A pessoa perde acesso aos dados imediatamente.')) return;
+      try {
+        const { db, fb } = window.__firebase;
+        await fb.setDoc(fb.doc(db, MEMBERS_COL, el.dataset.revoke), { status: 'revogado' }, { merge: true });
+        toast('Acesso revogado.', 'ok');
+        renderAdminPage();
+      } catch (err) { toast('Erro ao revogar: ' + (err.message||err), 'err'); }
+    });
+  });
+
+  document.querySelectorAll('[data-reactivate]').forEach(el => {
+    el.addEventListener('click', async () => {
+      try {
+        const { db, fb } = window.__firebase;
+        await fb.setDoc(fb.doc(db, MEMBERS_COL, el.dataset.reactivate), { status: 'convidado' }, { merge: true });
+        await sendInviteEmail(el.dataset.reactivate);
+        toast('Acesso reativado e novo convite enviado.', 'ok');
+        renderAdminPage();
+      } catch (err) { toast('Erro ao reativar: ' + (err.message||err), 'err'); }
+    });
+  });
+}
+
+async function sendInviteEmail(email) {
+  const { auth, fb } = window.__firebase;
+  const actionCodeSettings = {
+    url: window.location.origin + window.location.pathname,
+    handleCodeInApp: true,
+  };
+  await fb.sendSignInLinkToEmail(auth, email, actionCodeSettings);
+}
+
+function openInviteModal() {
+  openModal(`
+    <div class="modal-head"><h3>Convidar pessoa</h3><button class="icon-btn" id="btnCloseInvite">${icon('x')}</button></div>
+    <form id="inviteForm">
+      <div class="modal-body">
+        <div class="field"><label>Nome</label><input type="text" name="nome" required></div>
+        <div class="field"><label>E-mail</label><input type="email" name="email" required></div>
+        <div class="field"><label>Papel</label>
+          <select name="role"><option value="usuario" selected>Usuário</option><option value="admin">Admin</option></select>
+        </div>
+        <p class="help">A pessoa recebe um e-mail com um link para acessar o site e cadastrar sua senha. Depois disso, entra normalmente com e-mail e senha.</p>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn btn-ghost" id="btnCancelInvite">Cancelar</button>
+        <button type="submit" class="btn btn-primary" id="btnSendInvite">${icon('mail')}Enviar convite</button>
+      </div>
+    </form>
+  `);
+  document.getElementById('btnCloseInvite').addEventListener('click', closeModal);
+  document.getElementById('btnCancelInvite').addEventListener('click', closeModal);
+  document.getElementById('inviteForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const email = (fd.get('email') || '').trim().toLowerCase();
+    const nome = (fd.get('nome') || '').trim();
+    const role = fd.get('role') || 'usuario';
+    if (!email || !nome) return;
+    const btn = document.getElementById('btnSendInvite');
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner"></span> Enviando…`;
+    try {
+      const { db, fb } = window.__firebase;
+      await fb.setDoc(fb.doc(db, MEMBERS_COL, email), {
+        nome, email, role, status: 'convidado', invitedAt: new Date().toISOString(), invitedBy: currentMember.email,
+      }, { merge: true });
+      await sendInviteEmail(email);
+      closeModal();
+      toast('Convite enviado para ' + email + '.', 'ok');
+      renderAdminPage();
+    } catch (err) {
+      btn.disabled = false;
+      btn.innerHTML = `${icon('mail')}Enviar convite`;
+      toast('Erro ao enviar convite: ' + (err.message||err), 'err');
+    }
+  });
+}
+/* ---------- NOVO CONTRATO WIZARD ---------- */
+let wizard = null;
+function resetWizard() {
+  wizard = {
+    step: 1,
+    fileName: '',
+    fileHash: '',
+    progressMsg: '',
+    duplicateFile: null,
+    duplicateNumber: null,
+    data: {
+      cliente: { nome: '', cnpj: '' },
+      fornecedor: { nome: 'OceanPact Geociências LTDA.', cnpj: '' },
+      contrato: {
+        numero: '', propostaRef: '', dataAssinatura: '', dataInicio: '', dataTermino: '',
+        moeda: 'BRL', valorTotal: 0, medicao: 'Lump Sum', unidadeNegocio: [], escopo: '',
+        prazoPagamentoDias: 30, reembolso: '', clausulaReajuste: '', clausulaCancelamento: '',
+        subcontratacao: '', riscos: '', observacoes: '',
+      },
+      marcos: [],
+    },
+    error: null,
+  };
+}
+
+function renderNewContract() {
+  if (!wizard) resetWizard();
+  const stepDef = [
+    { n: 1, label: 'Enviar contrato' },
+    { n: 2, label: 'Análise por IA' },
+    { n: 3, label: 'Revisar e salvar' },
+  ];
+  const stepsHtml = stepDef.map((s, i) => `
+    <div class="step ${wizard.step > s.n ? 'done' : wizard.step === s.n ? 'active' : ''}">
+      <div class="step-num">${wizard.step > s.n ? icon('check') : s.n}</div>
+      <div class="step-label">${s.label}</div>
+    </div>
+    ${i < stepDef.length - 1 ? `<div class="step-line ${wizard.step > s.n ? 'done' : ''}"></div>` : ''}
+  `).join('');
+
+  let body = '';
+  if (wizard.step === 1) body = renderWizardStep1();
+  else if (wizard.step === 2) body = renderWizardStep2();
+  else body = renderWizardStep3();
+
+  const html = `<div class="steps">${stepsHtml}</div><div id="wizardBody">${body}</div>`;
+  layout(html, { title: 'Novo contrato', crumbs: 'Envie o PDF do contrato para leitura automática ou preencha manualmente' });
+  bindGoto();
+  wireWizardEvents();
+}
+
+function renderWizardStep1() {
+  if (wizard.duplicateFile) {
+    const dup = wizard.duplicateFile;
+    const client = getClient(dup.clientCnpj);
+    return `
+      <div class="card card-pad" style="border-color:#f0d68a;background:#fffaf0">
+        <div style="display:flex;gap:12px">
+          <div style="color:var(--warning)">${icon('alert')}</div>
+          <div>
+            <div style="font-weight:700;color:var(--navy-darker)">Este arquivo já foi cadastrado</div>
+            <p class="help" style="margin-top:6px">O PDF que você enviou é idêntico, byte a byte, a um arquivo já importado para o contrato <strong>${escapeHtml(dup.numero || dup.id)}</strong>${client ? ' de <strong>' + escapeHtml(client.nome) + '</strong>' : ''}.</p>
+            <div style="display:flex;gap:10px;margin-top:14px">
+              <button class="btn btn-primary btn-sm" data-goto="contrato/${dup.id}/ficha">Ver contrato existente</button>
+              <button class="btn btn-outline btn-sm" id="btnUploadAnyway">Enviar mesmo assim (é outro contrato)</button>
+              <button class="btn btn-ghost btn-sm" id="btnCancelDup">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="card card-pad">
+      <div class="section-title">1. Envie o contrato em PDF</div>
+      <div class="upload-zone" id="pdfDrop">
+        ${icon('upload')}
+        <div style="font-weight:700;color:var(--navy-darker);margin-top:2px">Clique para selecionar ou arraste o PDF aqui</div>
+        <div class="help">O site vai extrair o texto do contrato e usar IA para preencher automaticamente o cliente, os dados do contrato e os marcos de faturamento. Arquivos já importados são detectados automaticamente.</div>
+      </div>
+      <input type="file" id="pdfInput" accept="application/pdf" style="display:none">
+      ${wizard.error ? `<div class="help" style="color:var(--danger);margin-top:10px">${icon('alert')} ${escapeHtml(wizard.error)}</div>` : ''}
+      <div class="divider"></div>
+      <button class="btn btn-ghost" id="btnSkipManual">Prefiro preencher manualmente, sem IA →</button>
+    </div>`;
+}
+
+function renderWizardStep2() {
+  return `
+    <div class="card card-pad" style="text-align:center;padding:50px 20px">
+      <div class="spinner spinner-dark" style="width:30px;height:30px;border-width:3px;margin:0 auto 16px"></div>
+      <div id="wizardProgressMsg" style="font-weight:700;color:var(--navy-darker)">${escapeHtml(wizard.progressMsg || 'Processando…')}</div>
+      <div class="help">Isso pode levar alguns segundos para contratos longos.</div>
+    </div>`;
+}
+
+function renderWizardStep3() {
+  const d = wizard.data;
+  const ubOptions = BUSINESS_UNITS.map(u => `
+    <label class="checkbox-row"><input type="checkbox" value="${u}" class="ub-check" ${(d.contrato.unidadeNegocio||[]).includes(u) ? 'checked' : ''}> ${u}</label>`).join('');
+
+  const marcosRows = d.marcos.map((m, i) => `
+    <tr>
+      <td style="width:64px"><input type="text" value="${escapeHtml(m.codigo||'')}" data-w="marco" data-i="${i}" data-f="codigo" style="width:56px"></td>
+      <td style="min-width:180px"><textarea rows="2" data-w="marco" data-i="${i}" data-f="descricao">${escapeHtml(m.descricao||'')}</textarea></td>
+      <td style="width:70px"><input type="text" value="${escapeHtml(m.percentual||'')}" data-w="marco" data-i="${i}" data-f="percentual" style="width:56px"></td>
+      <td style="width:120px"><input type="number" step="0.01" value="${m.valor||''}" data-w="marco" data-i="${i}" data-f="valor"></td>
+      <td style="min-width:220px"><textarea rows="2" data-w="marco" data-i="${i}" data-f="gatilho">${escapeHtml(m.gatilho||'')}</textarea></td>
+      <td style="width:40px"><button type="button" class="icon-btn" data-rm-marco="${i}">${icon('trash')}</button></td>
+    </tr>`).join('');
+
+  return `
+    <form id="wizardForm">
+      ${wizard.fileName ? `<div class="card card-pad" style="margin-bottom:18px;display:flex;align-items:center;gap:10px;background:var(--success-bg);border-color:#bfe3d2">
+        ${icon('sparkle')}<div><strong>Extração automática concluída</strong><div class="muted" style="font-size:12px">Arquivo: ${escapeHtml(wizard.fileName)} — revise os campos abaixo antes de salvar.</div></div>
+      </div>` : ''}
+      ${wizard.duplicateNumber ? `<div class="card card-pad" style="margin-bottom:18px;border-color:#f0d68a;background:#fffaf0">
+        <div style="display:flex;gap:12px">
+          <div style="color:var(--warning)">${icon('alert')}</div>
+          <div>
+            <div style="font-weight:700;color:var(--navy-darker)">Já existe um contrato com este número para este cliente</div>
+            <p class="help" style="margin-top:4px">Contrato <strong>${escapeHtml(wizard.duplicateNumber.numero)}</strong> já cadastrado. Se for o mesmo contrato, prefira <a class="link" data-goto="contrato/${wizard.duplicateNumber.id}/ficha">abrir o contrato existente</a> em vez de criar um novo. Se for um aditivo ou uma revisão à parte, pode continuar normalmente.</p>
+          </div>
+        </div>
+      </div>` : ''}
+
+      <div class="card card-pad" style="margin-bottom:18px">
+        <div class="section-title">Cliente</div>
+        <div class="field-row">
+          <div class="field"><label>Razão social *</label><input type="text" name="clienteNome" value="${escapeHtml(d.cliente.nome)}" required></div>
+          <div class="field"><label>CNPJ *</label><input type="text" name="clienteCnpj" value="${escapeHtml(d.cliente.cnpj)}" placeholder="somente números" required></div>
+        </div>
+      </div>
+
+      <div class="card card-pad" style="margin-bottom:18px">
+        <div class="section-title">Empresa OceanPact (contratada)</div>
+        <div class="field-row">
+          <div class="field"><label>Razão social</label><input type="text" name="fornecedorNome" value="${escapeHtml(d.fornecedor.nome)}"></div>
+          <div class="field"><label>CNPJ</label><input type="text" name="fornecedorCnpj" value="${escapeHtml(d.fornecedor.cnpj)}"></div>
+        </div>
+      </div>
+
+      <div class="card card-pad" style="margin-bottom:18px">
+        <div class="section-title">Dados do contrato</div>
+        <div class="field-row">
+          <div class="field"><label>Nº do contrato</label><input type="text" name="numero" value="${escapeHtml(d.contrato.numero)}"></div>
+          <div class="field"><label>Referência da proposta</label><input type="text" name="propostaRef" value="${escapeHtml(d.contrato.propostaRef)}"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Data assinatura</label><input type="date" name="dataAssinatura" value="${d.contrato.dataAssinatura||''}"></div>
+          <div class="field"><label>Data início</label><input type="date" name="dataInicio" value="${d.contrato.dataInicio||''}"></div>
+          <div class="field"><label>Data término</label><input type="date" name="dataTermino" value="${d.contrato.dataTermino||''}"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Moeda</label>
+            <select name="moeda"><option ${d.contrato.moeda==='BRL'?'selected':''}>BRL</option><option ${d.contrato.moeda==='USD'?'selected':''}>USD</option><option ${d.contrato.moeda==='OUTRO'?'selected':''}>OUTRO</option></select>
+          </div>
+          <div class="field"><label>Valor total</label><input type="number" step="0.01" name="valorTotal" value="${d.contrato.valorTotal||''}"></div>
+          <div class="field"><label>Medição</label><input type="text" name="medicao" value="${escapeHtml(d.contrato.medicao||'')}"></div>
+          <div class="field"><label>Prazo pagamento (dias)</label><input type="number" name="prazoPagamentoDias" value="${d.contrato.prazoPagamentoDias||30}"></div>
+        </div>
+        <div class="field"><label>Unidade de negócio</label><div class="pill-list" style="gap:14px">${ubOptions}</div></div>
+        <div class="field"><label>Escopo</label><textarea name="escopo">${escapeHtml(d.contrato.escopo||'')}</textarea></div>
+        <div class="field-row">
+          <div class="field"><label>Reembolso</label><textarea name="reembolso">${escapeHtml(d.contrato.reembolso||'')}</textarea></div>
+          <div class="field"><label>Cláusula de reajuste</label><textarea name="clausulaReajuste">${escapeHtml(d.contrato.clausulaReajuste||'')}</textarea></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Cláusula de cancelamento</label><textarea name="clausulaCancelamento">${escapeHtml(d.contrato.clausulaCancelamento||'')}</textarea></div>
+          <div class="field"><label>Subcontratação</label><textarea name="subcontratacao">${escapeHtml(d.contrato.subcontratacao||'')}</textarea></div>
+        </div>
+        <div class="field"><label>Riscos e pontos de atenção</label><textarea name="riscos">${escapeHtml(d.contrato.riscos||'')}</textarea></div>
+        <div class="field"><label>Observações</label><textarea name="observacoes">${escapeHtml(d.contrato.observacoes||'')}</textarea></div>
+      </div>
+
+      <div class="card card-pad" style="margin-bottom:18px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div class="section-title">Marcos de faturamento</div>
+          <button type="button" class="btn btn-outline btn-sm" id="btnAddMarcoWizard">${icon('plus')}Novo marco</button>
+        </div>
+        <p class="help">Descreva em "O que libera o faturamento" a condição objetiva de cada marco — isso aparecerá na aba de gerenciamento de faturamento.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Marco</th><th>Descrição</th><th>%</th><th>Valor (R$)</th><th>O que libera o faturamento</th><th></th></tr></thead>
+            <tbody>${marcosRows || `<tr><td colspan="6" class="tbl-empty">Nenhum marco ainda — adicione pelo menos um.</td></tr>`}</tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between">
+        <button type="button" class="btn btn-ghost" id="btnBackStep1">← Recomeçar</button>
+        <button type="submit" class="btn btn-primary">${icon('check')}Salvar contrato</button>
+      </div>
+    </form>`;
+}
+
+function captureWizardForm() {
+  const form = document.getElementById('wizardForm');
+  if (!form) return;
+  const fd = new FormData(form);
+  const d = wizard.data;
+  d.cliente.nome = fd.get('clienteNome') || '';
+  d.cliente.cnpj = onlyDigits(fd.get('clienteCnpj') || '');
+  d.fornecedor.nome = fd.get('fornecedorNome') || '';
+  d.fornecedor.cnpj = onlyDigits(fd.get('fornecedorCnpj') || '');
+  ['numero','propostaRef','dataAssinatura','dataInicio','dataTermino','moeda','medicao','escopo','reembolso','clausulaReajuste','clausulaCancelamento','subcontratacao','riscos','observacoes'].forEach(f => d.contrato[f] = fd.get(f) || '');
+  d.contrato.valorTotal = Number(fd.get('valorTotal')) || 0;
+  d.contrato.prazoPagamentoDias = Number(fd.get('prazoPagamentoDias')) || 30;
+  d.contrato.unidadeNegocio = Array.from(document.querySelectorAll('.ub-check:checked')).map(el => el.value);
+  document.querySelectorAll('[data-w="marco"]').forEach(el => {
+    const i = Number(el.dataset.i), f = el.dataset.f;
+    if (d.marcos[i]) d.marcos[i][f] = f === 'valor' ? Number(el.value) || 0 : el.value;
+  });
+}
+
+function wireWizardEvents() {
+  if (wizard.step === 1) {
+    if (wizard.duplicateFile) {
+      bindGoto();
+      document.getElementById('btnUploadAnyway').addEventListener('click', () => {
+        const file = wizard.pendingFile;
+        wizard.duplicateFile = null;
+        if (file) handlePdfUpload(file, true);
+      });
+      document.getElementById('btnCancelDup').addEventListener('click', () => { resetWizard(); render(); });
+      return;
+    }
+    const input = document.getElementById('pdfInput');
+    const drop = document.getElementById('pdfDrop');
+    drop.addEventListener('click', () => input.click());
+    ['dragover','dragleave','drop'].forEach(evt => drop.addEventListener(evt, (e) => {
+      e.preventDefault();
+      drop.classList.toggle('dragover', evt === 'dragover');
+    }));
+    drop.addEventListener('drop', (e) => {
+      const file = e.dataTransfer.files[0];
+      if (file) handlePdfUpload(file);
+    });
+    input.addEventListener('change', () => { if (input.files[0]) handlePdfUpload(input.files[0]); });
+    document.getElementById('btnSkipManual').addEventListener('click', () => {
+      resetWizard(); wizard.step = 3; render();
+    });
+  }
+  if (wizard.step === 3) {
+    document.getElementById('btnBackStep1').addEventListener('click', () => { resetWizard(); render(); });
+    document.getElementById('btnAddMarcoWizard').addEventListener('click', () => {
+      captureWizardForm();
+      const n = wizard.data.marcos.length + 1;
+      wizard.data.marcos.push({ codigo: 'BM' + n, descricao: '', percentual: '', valor: 0, gatilho: '', dataPrevisao: '' });
+      render();
+    });
+    document.querySelectorAll('[data-rm-marco]').forEach(el => {
+      el.addEventListener('click', () => {
+        captureWizardForm();
+        wizard.data.marcos.splice(Number(el.dataset.rmMarco), 1);
+        render();
+      });
+    });
+    document.getElementById('wizardForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      captureWizardForm();
+      await saveWizardContract();
+    });
+  }
+}
+
+async function handlePdfUpload(file, force) {
+  wizard.fileName = file.name;
+  wizard.pendingFile = file;
+  wizard.step = 2;
+  wizard.progressMsg = 'Verificando se este arquivo já foi cadastrado…';
+  wizard.error = null;
+  render();
+  try {
+    const buf = await file.arrayBuffer();
+    const hash = await sha256Hex(buf);
+    const dup = !force && findContractByHash(hash);
+    if (dup) {
+      wizard.step = 1;
+      wizard.duplicateFile = dup;
+      render();
+      return;
+    }
+    wizard.fileHash = hash;
+    wizard.progressMsg = 'Lendo o PDF…';
+    render();
+    const text = await extractPdfText(file, (cur, total) => {
+      wizard.progressMsg = `Lendo página ${cur} de ${total}…`;
+      const msgEl = document.getElementById('wizardProgressMsg');
+      if (msgEl) msgEl.textContent = wizard.progressMsg;
+    });
+    wizard.progressMsg = 'Analisando o contrato com IA…';
+    render();
+    const parsed = await callClaudeExtraction(text);
+    mergeExtractedData(parsed);
+    wizard.duplicateNumber = findContractByNumber(onlyDigits(wizard.data.cliente.cnpj), wizard.data.contrato.numero);
+    wizard.step = 3;
+    render();
+  } catch (err) {
+    console.error(err);
+    wizard.step = 1;
+    wizard.error = (err && err.message) ? err.message : 'Não foi possível processar o PDF. Tente novamente ou preencha manualmente.';
+    render();
+  }
+}
+
+function mergeExtractedData(parsed) {
+  const d = wizard.data;
+  if (parsed.cliente) Object.assign(d.cliente, { nome: parsed.cliente.nome || '', cnpj: onlyDigits(parsed.cliente.cnpj || '') });
+  if (parsed.fornecedor) Object.assign(d.fornecedor, { nome: parsed.fornecedor.nome || d.fornecedor.nome, cnpj: onlyDigits(parsed.fornecedor.cnpj || '') });
+  if (parsed.contrato) Object.assign(d.contrato, parsed.contrato);
+  if (Array.isArray(parsed.marcos)) d.marcos = parsed.marcos.map((m, i) => ({
+    codigo: m.codigo || ('BM' + (i + 1)), descricao: m.descricao || '', percentual: m.percentual || '',
+    valor: Number(m.valor) || 0, gatilho: m.gatilho || '', dataPrevisao: m.dataPrevisao || '',
+  }));
+}
+
+async function saveWizardContract() {
+  const d = wizard.data;
+  if (!d.cliente.nome || !d.cliente.cnpj) { toast('Preencha nome e CNPJ do cliente.', 'err'); return; }
+  const cnpj = onlyDigits(d.cliente.cnpj);
+  if (!DB.clients[cnpj]) DB.clients[cnpj] = { cnpj, nome: d.cliente.nome, contatos: [] };
+  else DB.clients[cnpj].nome = d.cliente.nome || DB.clients[cnpj].nome;
+  await dbSave('clients');
+
+  const contractId = uid('ctr');
+  const contract = {
+    id: contractId, clientCnpj: cnpj,
+    fornecedorNome: d.fornecedor.nome, fornecedorCnpj: onlyDigits(d.fornecedor.cnpj),
+    sourceHash: wizard.fileHash || '',
+    createdAt: new Date().toISOString(),
+    aditivos: [],
+    ...d.contrato,
+  };
+  DB.contracts.push(contract);
+  await dbSave('contracts');
+
+  d.marcos.forEach(m => {
+    DB.billings.push({
+      id: uid('bm'), contractId, codigo: m.codigo, descricao: m.descricao, percentual: m.percentual,
+      valor: m.valor, gatilho: m.gatilho, dataPrevisao: m.dataPrevisao, origin: 'original',
+      releasedDate: '', bmGeneratedDate: '', bmSentDate: '', bmApprovedDate: '', nfSentDate: '', paymentDate: '',
+    });
+  });
+  await dbSave('billings');
+
+  toast('Contrato cadastrado com sucesso!', 'ok');
+  resetWizard();
+  location.hash = '#/contrato/' + contractId + '/faturamento';
+}
+
+/* ---------- main render / init ---------- */
+function render() {
+  if (!DB.loaded) return;
+  const route = currentRoute();
+  if (route.name === 'dashboard') renderDashboard();
+  else if (route.name === 'clientes' && route.params[0]) renderClientDetail(route.params[0]);
+  else if (route.name === 'clientes') renderClients();
+  else if (route.name === 'contratos') renderContractsList();
+  else if (route.name === 'contrato') renderContractDetail(route.params[0], route.params[1]);
+  else if (route.name === 'novo-contrato') renderNewContract();
+  else if (route.name === 'admin') renderAdminPage();
+  else renderDashboard();
+}
+
+
+/* ---------- AUTH ---------- */
+let currentUser = null; // Firebase Auth user object
+let suppressAuthStateHandling = false; // true enquanto o fluxo de convite/senha está em andamento
+const EMAIL_LS_KEY = 'contratosOcpEmailForSignIn';
+
+function renderLoginScreen(errorMsg) {
+  document.getElementById('app').innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--navy-darker);padding:20px">
+      <div class="card" style="max-width:380px;width:100%">
+        <div class="card-pad">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
+            <div class="brand-mark">OP</div>
+            <div>
+              <div style="font-weight:700;color:var(--navy-darker)">Contratos OCP</div>
+              <div class="muted" style="font-size:11.5px">Gestão &amp; Faturamento</div>
+            </div>
+          </div>
+          <form id="loginForm">
+            <div class="field"><label>E-mail</label><input type="email" name="email" required autocomplete="username"></div>
+            <div class="field"><label>Senha</label><input type="password" name="password" required autocomplete="current-password"></div>
+            ${errorMsg ? `<div class="help" style="color:var(--danger);margin-bottom:10px">${icon('alert')} ${escapeHtml(errorMsg)}</div>` : ''}
+            <button type="submit" class="btn btn-primary btn-block" id="btnLogin">Entrar</button>
+          </form>
+          <p class="help" style="margin-top:14px">Acesso somente por convite. Se você recebeu um e-mail de convite, abra-o para definir sua senha e ganhar acesso.</p>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const btn = document.getElementById('btnLogin');
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner"></span> Entrando…`;
+    try {
+      const { auth, fb } = window.__firebase;
+      await fb.signInWithEmailAndPassword(auth, fd.get('email'), fd.get('password'));
+      // onAuthStateChanged assume a partir daqui
+    } catch (err) {
+      renderLoginScreen(traduzErroAuth(err));
+    }
+  });
+}
+
+function renderAskEmailScreen(onSubmit) {
+  document.getElementById('app').innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--navy-darker);padding:20px">
+      <div class="card" style="max-width:380px;width:100%">
+        <div class="card-pad">
+          <div style="font-weight:700;color:var(--navy-darker);margin-bottom:8px">Confirme seu e-mail</div>
+          <p class="help" style="margin-top:0">Você abriu o link de convite em um navegador diferente do que usou para pedir o acesso. Digite o e-mail que recebeu o convite para continuar.</p>
+          <form id="confirmEmailForm">
+            <div class="field"><label>E-mail</label><input type="email" name="email" required></div>
+            <button type="submit" class="btn btn-primary btn-block">Continuar</button>
+          </form>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById('confirmEmailForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    onSubmit(new FormData(e.target).get('email').trim().toLowerCase());
+  });
+}
+
+function renderSetPasswordScreen() {
+  document.getElementById('app').innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--navy-darker);padding:20px">
+      <div class="card" style="max-width:380px;width:100%">
+        <div class="card-pad">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">${icon('shield')}<div style="font-weight:700;color:var(--navy-darker)">Bem-vindo(a)! Defina sua senha</div></div>
+          <p class="help" style="margin-top:0">Você confirmou seu convite como <strong>${escapeHtml(currentUser.email)}</strong>. Crie uma senha para entrar da próxima vez direto com e-mail e senha.</p>
+          <form id="setPwdForm">
+            <div class="field"><label>Nova senha</label><input type="password" name="password" minlength="6" required autocomplete="new-password"></div>
+            <div class="field"><label>Confirmar senha</label><input type="password" name="password2" minlength="6" required autocomplete="new-password"></div>
+            <div id="setPwdError" class="help" style="color:var(--danger);display:none;margin-bottom:10px">${icon('alert')} <span></span></div>
+            <button type="submit" class="btn btn-primary btn-block" id="btnSetPwd">Salvar senha e entrar</button>
+          </form>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById('setPwdForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const p1 = fd.get('password'), p2 = fd.get('password2');
+    const errBox = document.getElementById('setPwdError');
+    if (p1 !== p2) {
+      errBox.style.display = 'block'; errBox.querySelector('span').textContent = 'As senhas não coincidem.';
+      return;
+    }
+    const btn = document.getElementById('btnSetPwd');
+    btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> Salvando…`;
+    try {
+      const { db, fb } = window.__firebase;
+      await fb.updatePassword(currentUser, p1);
+      await fb.setDoc(fb.doc(db, MEMBERS_COL, currentUser.email), { status: 'ativo', activatedAt: new Date().toISOString() }, { merge: true });
+      await proceedIntoApp();
+    } catch (err) {
+      errBox.style.display = 'block'; errBox.querySelector('span').textContent = traduzErroAuth(err);
+      btn.disabled = false; btn.innerHTML = 'Salvar senha e entrar';
+    }
+  });
+}
+
+function renderBlockedScreen(reason) {
+  document.getElementById('app').innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--navy-darker);padding:20px">
+      <div class="card" style="max-width:380px;width:100%">
+        <div class="card-pad" style="text-align:center">
+          <div style="color:var(--warning);margin-bottom:10px">${icon('alert')}</div>
+          <div style="font-weight:700;color:var(--navy-darker);margin-bottom:6px">Acesso não liberado</div>
+          <p class="help">${escapeHtml(reason)}</p>
+          <button class="btn btn-outline btn-block" id="btnBlockedLogout">Sair</button>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById('btnBlockedLogout').addEventListener('click', async () => {
+    const { auth, fb } = window.__firebase;
+    await fb.signOut(auth);
+  });
+}
+
+function traduzErroAuth(err) {
+  const code = err && err.code || '';
+  if (code.includes('invalid-credential') || code.includes('wrong-password') || code.includes('user-not-found')) return 'E-mail ou senha incorretos.';
+  if (code.includes('too-many-requests')) return 'Muitas tentativas. Aguarde um pouco e tente novamente.';
+  if (code.includes('invalid-email')) return 'E-mail inválido.';
+  if (code.includes('requires-recent-login')) return 'Por segurança, abra o link de convite novamente para definir a senha.';
+  if (code.includes('weak-password')) return 'Escolha uma senha com pelo menos 6 caracteres.';
+  return 'Não foi possível concluir: ' + (err.message || code);
+}
+
+function wireLogout() {
+  const btn = document.getElementById('btnLogout');
+  if (btn) btn.addEventListener('click', async () => {
+    const { auth, fb } = window.__firebase;
+    await fb.signOut(auth);
+  });
+}
+
+/* ---------- bootstrap ---------- */
+async function proceedIntoApp() {
+  const { db, fb } = window.__firebase;
+  const snap = await fb.getDoc(fb.doc(db, MEMBERS_COL, currentUser.email));
+  if (!snap.exists()) {
+    renderBlockedScreen('Seu e-mail (' + currentUser.email + ') ainda não foi cadastrado pelo administrador. Peça para alguém com acesso de administrador te convidar.');
+    return;
+  }
+  const member = { email: currentUser.email, ...snap.data() };
+  if (member.status === 'revogado') {
+    renderBlockedScreen('Seu acesso a este sistema foi revogado. Fale com o administrador se isso for um engano.');
+    return;
+  }
+  if (member.status !== 'ativo') {
+    renderBlockedScreen('Seu convite ainda não foi concluído. Abra o e-mail de convite novamente para definir sua senha.');
+    return;
+  }
+  currentMember = member;
+  stopFirestoreSync();
+  startFirestoreSync(() => render());
+}
+
+async function handleEmailLinkSignIn() {
+  const { auth, fb } = window.__firebase;
+  let email = window.localStorage.getItem(EMAIL_LS_KEY);
+  const completeWith = async (email) => {
+    try {
+      const result = await fb.signInWithEmailLink(auth, email, window.location.href);
+      window.localStorage.removeItem(EMAIL_LS_KEY);
+      window.history.replaceState({}, document.title, window.location.pathname);
+      currentUser = result.user;
+      renderSetPasswordScreen();
+      suppressAuthStateHandling = false;
+    } catch (err) {
+      suppressAuthStateHandling = false;
+      renderLoginScreen('Não foi possível validar o convite: ' + traduzErroAuth(err));
+    }
+  };
+  if (!email) {
+    renderAskEmailScreen(completeWith);
+  } else {
+    await completeWith(email);
+  }
+}
+
+function bootstrapAuthGate() {
+  const { auth, fb } = window.__firebase;
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  if (fb.isSignInWithEmailLink(auth, window.location.href)) {
+    suppressAuthStateHandling = true;
+    document.getElementById('app').innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#fff;background:var(--navy-darker)"><div class="spinner" style="width:26px;height:26px;border-width:3px;margin-right:10px"></div>Validando convite…</div>`;
+    handleEmailLinkSignIn();
+  } else {
+    document.getElementById('app').innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#fff;background:var(--navy-darker)"><div class="spinner" style="width:26px;height:26px;border-width:3px;margin-right:10px"></div>Carregando…</div>`;
+  }
+
+  fb.onAuthStateChanged(auth, async (user) => {
+    if (suppressAuthStateHandling) return; // o fluxo de convite/senha está cuidando da tela
+    if (user) {
+      currentUser = user;
+      try { await proceedIntoApp(); }
+      catch (err) { renderBlockedScreen('Erro ao verificar seu acesso: ' + (err.message || err)); }
+    } else {
+      currentUser = null;
+      currentMember = null;
+      stopFirestoreSync();
+      renderLoginScreen();
+    }
+  });
+}
+
+bootstrapAuthGate();
+
+</script>
+</body>
+</html>
