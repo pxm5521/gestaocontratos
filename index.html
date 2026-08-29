@@ -178,6 +178,10 @@ input[type=text],input[type=number],input[type=date],input[type=email],select,te
 }
 textarea{resize:vertical;min-height:64px}
 input:focus,select:focus,textarea:focus{outline:2px solid var(--blue-light);outline-offset:0;border-color:var(--blue-light)}
+/* remove os botões de incrementar/decrementar dos campos numéricos — digitar direto é suficiente e libera espaço pro texto */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+input[type=number]{-moz-appearance:textfield;appearance:textfield}
 .field-row{display:flex;gap:12px}
 .field-row > .field{flex:1}
 .help{font-size:11.5px;color:var(--text-muted);margin-top:4px}
@@ -588,8 +592,8 @@ function statusMeta(key) { return STATUS_STEPS.find(s => s.key === key) || STATU
 function getClient(cnpj) { return DB.clients[cnpj]; }
 function getContract(id) { return DB.contracts.find(c => c.id === id); }
 function contractsForClient(cnpj) { return DB.contracts.filter(c => c.clientCnpj === cnpj); }
-function billingsForContract(id) { return DB.billings.filter(b => b.contractId === id).sort((a,b)=> (a.codigo||'').localeCompare(b.codigo||'')); }
-function contractLinesForContract(id) { return DB.contractLines.filter(l => l.contractId === id).sort((a,b)=> (a.codigo||'').localeCompare(b.codigo||'')); }
+function billingsForContract(id) { return DB.billings.filter(b => b.contractId === id).sort((a,b)=> (a.codigo||'').localeCompare(b.codigo||'', undefined, { numeric: true, sensitivity: 'base' })); }
+function contractLinesForContract(id) { return DB.contractLines.filter(l => l.contractId === id).sort((a,b)=> (a.codigo||'').localeCompare(b.codigo||'', undefined, { numeric: true, sensitivity: 'base' })); }
 
 /* ---------- toast ---------- */
 function toast(msg, kind) {
@@ -1803,7 +1807,7 @@ function renderLinhasModal(billing, contract, client, opts) {
       <td>${escapeHtml(l.descricao||'')}</td>
       <td class="muted">${escapeHtml(l.unidade||'')}</td>
       <td class="mono">${formatCurrency(l.precoUnitario, contract.moeda)}</td>
-      <td style="width:110px"><input type="number" step="0.01" min="0" value="${current[l.id] || ''}" data-line-qty="${l.id}" placeholder="0"></td>
+      <td style="width:110px"><input type="number" step="0.01" min="0" value="${current[l.id] || ''}" data-line-qty="${l.id}" placeholder="0" style="width:90px"></td>
     </tr>`).join('');
 
   const title = opts.standalone ? 'Gerar BM / Proforma avulso' : 'Gerar BM / Proforma — Marco ' + escapeHtml(billing.codigo);
@@ -2105,7 +2109,7 @@ function wireContractDetailEvents(contract, tab) {
       };
       const setModalMsg = (msg, isErr) => {
         const el2 = document.getElementById('linhasModalMsg');
-        if (el2) { el2.textContent = msg || ''; el2.style.color = isErr ? 'var(--danger)' : 'var(--success)'; }
+        if (el2) { el2.textContent = msg || ''; el2.style.color = isErr ? 'var(--danger)' : 'var(--success)'; el2.style.fontWeight = '700'; }
       };
       const applyLinhas = async () => {
         billing.linhas = readLinhasFromModal();
@@ -2129,11 +2133,13 @@ function wireContractDetailEvents(contract, tab) {
         btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> Gerando…`;
         try {
           await applyLinhas();
+          if (!billing.linhas.length) throw new Error('Selecione ao menos um item com quantidade maior que zero antes de gerar.');
           const fileName = await generateBmFile(client, contract, billing);
           if (!opts.standalone) { if (!billing.bmGeneratedDate) billing.bmGeneratedDate = todayISO(); await dbSave('billings'); }
           setModalMsg('BM gerado: ' + fileName, false);
           toast('BM gerado: ' + fileName, 'ok');
         } catch (err) {
+          console.error('Erro ao gerar BM:', err);
           setModalMsg(err.message || 'Erro ao gerar o BM.', true);
           toast(err.message || 'Erro ao gerar o BM.', 'err');
         } finally {
@@ -2145,11 +2151,13 @@ function wireContractDetailEvents(contract, tab) {
         btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> Gerando…`;
         try {
           await applyLinhas();
+          if (!billing.linhas.length) throw new Error('Selecione ao menos um item com quantidade maior que zero antes de gerar.');
           const fileName = await generateProformaFile(client, contract, billing);
           if (!opts.standalone) { if (!billing.proformaGeneratedDate) billing.proformaGeneratedDate = todayISO(); await dbSave('billings'); }
           setModalMsg('Proforma gerada: ' + fileName, false);
           toast('Proforma gerada: ' + fileName, 'ok');
         } catch (err) {
+          console.error('Erro ao gerar Proforma:', err);
           setModalMsg(err.message || 'Erro ao gerar a Proforma.', true);
           toast(err.message || 'Erro ao gerar a Proforma.', 'err');
         } finally {
