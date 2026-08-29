@@ -707,7 +707,7 @@ async function callClaudeViaFunction(system, userContent) {
   const response = await fetch('/api/claude-extract', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ system, userContent, maxTokens: 3200 }),
+    body: JSON.stringify({ system, userContent, maxTokens: 6000 }),
   });
   let data;
   try { data = await response.json(); }
@@ -715,11 +715,31 @@ async function callClaudeViaFunction(system, userContent) {
   if (!response.ok) {
     throw new Error(data.error || ('Falha na análise por IA (HTTP ' + response.status + ').'));
   }
+  if (data.stop_reason === 'max_tokens') {
+    throw new Error('A resposta da IA foi cortada por ser muito grande (contrato com muitos itens de preço/marcos). Tente selecionar menos páginas (só a parte essencial da tabela de preços e dos marcos), ou preencha os itens que faltarem manualmente depois de salvar.');
+  }
   try { return extractJsonFromClaudeResponse(data); }
   catch (e) { throw new Error('Não foi possível interpretar a resposta da IA como JSON. Tente novamente ou preencha manualmente.'); }
 }
 
-const EXTRACTION_SYSTEM_PROMPT = `Você é um assistente que extrai dados estruturados de contratos comerciais para uma ferramenta de gestão de faturamento. Leia o texto do contrato fornecido e devolva SOMENTE um objeto JSON válido (sem markdown, sem crases, sem comentários, sem texto antes ou depois), seguindo exatamente este formato:
+function buildMainExtractionPrompt(includePricingInline, includeMarcosInline) {
+  const pricingSchemaBlock = includePricingInline ? `,
+  "itensPreco": [
+    {"codigo": "1", "descricao": "", "unidade": "Lump Sum", "precoUnitario": 0, "quantidade": ""}
+  ]` : '';
+  const marcosSchemaBlock = includeMarcosInline ? `,
+  "marcos": [
+    {"codigo": "BM1", "descricao": "", "percentual": "15%", "valor": 0, "gatilho": "descreva objetivamente o que libera o faturamento deste marco", "dataPrevisao": ""}
+  ]` : '';
+  const pricingRules = includePricingInline
+    ? `\n- "itensPreco" é a TABELA DE PREÇOS/pricing schedule do contrato (ex.: Anexo E) — o catálogo de itens/serviços com preço, DIFERENTE de "marcos" (que são as parcelas/eventos de faturamento). Para cada item: "codigo" é o número/código do item se houver (ou deixe vazio); "descricao" é o nome do serviço; "unidade" é a unidade de medida (ex.: Lump Sum, Day Rate, dia, unidade); "precoUnitario" é o valor unitário; "quantidade" é a quantidade contratada SE o contrato especificar uma quantidade fixa — muitos itens só têm preço unitário sem quantidade definida, nesse caso deixe "quantidade" como string vazia "".`
+    : '';
+  const marcosRules = includeMarcosInline
+    ? `\n- valorTotal e valor dos marcos devem ser números (sem "R$", sem separador de milhar), use ponto decimal. PROCURE ATIVAMENTE o valor total do contrato e o cronograma de marcos no texto — geralmente aparecem em um Anexo/Exhibit específico, que pode estar em qualquer parte do documento, não só no início. Só deixe 0/vazio se genuinamente não encontrar nada sobre isso no texto fornecido.
+- O campo "gatilho" de cada marco é o mais importante: descreva com precisão a condição objetiva que libera aquele faturamento (ex.: "assinatura do contrato", "mobilização da embarcação e calibração concluída", "entrega do relatório final draft"), baseando-se no texto do contrato ou da proposta comercial anexa, não apenas no nome do marco.
+- Se o contrato não tiver marcos de faturamento explícitos, tente inferir a partir do cronograma de pagamento descrito; se não houver nenhuma informação, devolva uma lista vazia.`
+    : `\n- valorTotal deve ser um número (sem "R$", sem separador de milhar), use ponto decimal. Só deixe 0 se genuinamente não encontrar no texto fornecido.`;
+  return `Você é um assistente que extrai dados estruturados de contratos comerciais para uma ferramenta de gestão de faturamento. Leia o texto do contrato fornecido e devolva SOMENTE um objeto JSON válido (sem markdown, sem crases, sem comentários, sem texto antes ou depois), seguindo exatamente este formato:
 
 {
   "cliente": {"nome": "", "cnpj": ""},
@@ -742,30 +762,85 @@ const EXTRACTION_SYSTEM_PROMPT = `Você é um assistente que extrai dados estrut
     "subcontratacao": "",
     "riscos": "",
     "observacoes": ""
-  },
-  "marcos": [
-    {"codigo": "BM1", "descricao": "", "percentual": "15%", "valor": 0, "gatilho": "descreva objetivamente o que libera o faturamento deste marco", "dataPrevisao": ""}
-  ],
-  "itensPreco": [
-    {"codigo": "1", "descricao": "", "unidade": "Lump Sum", "precoUnitario": 0, "quantidade": ""}
-  ]
+  }${marcosSchemaBlock}${pricingSchemaBlock}
 }
 
 Regras importantes:
 - "unidadeNegocio" deve ser uma lista escolhida entre: Oceanografia, Geotecnia, Geofísica, Monitoramento Ambiental (as que se aplicarem ao escopo, pode ser mais de uma ou nenhuma). Baseie-se no tipo de serviço técnico descrito no escopo (ex.: CPTs e amostragem de solo = Geotecnia; sonar, magnetômetro, sub-bottom profiler = Geofísica; levantamento oceanográfico geral = Oceanografia; monitoramento de qualidade da água/fauna/impacto ambiental = Monitoramento Ambiental).
 - CNPJ deve ser só os 14 dígitos, sem formatação.
 - Datas sempre em AAAA-MM-DD; se não encontrar, deixe string vazia "".
-- "medicao" é APENAS a unidade de medição comercial do preço: Lump Sum, Day Rate, Por HH ou similar — NUNCA descreva aqui o cronograma/marcos de faturamento (isso vai em "marcos"), são coisas diferentes.
-- "itensPreco" é a TABELA DE PREÇOS/pricing schedule do contrato (ex.: Anexo E) — o catálogo de itens/serviços com preço, DIFERENTE de "marcos" (que são as parcelas/eventos de faturamento). Para cada item: "codigo" é o número/código do item se houver (ou deixe vazio); "descricao" é o nome do serviço; "unidade" é a unidade de medida (ex.: Lump Sum, Day Rate, dia, unidade); "precoUnitario" é o valor unitário; "quantidade" é a quantidade contratada SE o contrato especificar uma quantidade fixa — muitos itens só têm preço unitário sem quantidade definida (ex.: day rate a ser usado conforme necessidade), nesse caso deixe "quantidade" como string vazia "".
-- valorTotal e valor dos marcos/itensPreco devem ser números (sem "R$", sem separador de milhar), use ponto decimal. PROCURE ATIVAMENTE o valor total do contrato, a tabela de preços e o cronograma de marcos no texto — geralmente aparecem em um Anexo/Exhibit específico, que pode estar em qualquer parte do documento, não só no início; se o texto tiver seções marcadas com "=== TABELA DE PREÇOS ===" ou "=== MARCOS DE FATURAMENTO ===", dê atenção especial a elas. Só deixe 0/vazio se genuinamente não encontrar nada sobre isso no texto fornecido.
-- O campo "gatilho" de cada marco é o mais importante: descreva com precisão a condição objetiva que libera aquele faturamento (ex.: "assinatura do contrato", "mobilização da embarcação e calibração concluída", "entrega do relatório final draft"), baseando-se no texto do contrato ou da proposta comercial anexa, não apenas no nome do marco.
-- Se o contrato não tiver marcos de faturamento explícitos, tente inferir a partir do cronograma de pagamento descrito; se não houver nenhuma informação, devolva uma lista vazia. O mesmo vale para "itensPreco".
+- "medicao" é APENAS a unidade de medição comercial do preço: Lump Sum, Day Rate, Por HH ou similar — NUNCA descreva aqui o cronograma/marcos de faturamento.${pricingRules}${marcosRules}
 - Nunca invente CNPJ, números de contrato ou valores que não constem no texto — deixe vazio/0 quando não encontrar.
-- TODOS os campos de texto livre (escopo, reembolso, clausulaReajuste, clausulaCancelamento, subcontratacao, riscos, observacoes, descrição dos itens de preço) devem ser escritos em PORTUGUÊS, em suas próprias palavras — um resumo objetivo, não uma cópia/tradução literal de trechos do contrato em inglês. Nomes próprios, razão social e siglas (ex.: CPT, Exhibit B) permanecem como estão.`;
+- TODOS os campos de texto livre (escopo, reembolso, clausulaReajuste, clausulaCancelamento, subcontratacao, riscos, observacoes) devem ser escritos em PORTUGUÊS, em suas próprias palavras — um resumo objetivo, não uma cópia/tradução literal de trechos do contrato em inglês. Nomes próprios, razão social e siglas (ex.: CPT, Exhibit B) permanecem como estão.`;
+}
+
+const EXTRACTION_SYSTEM_PROMPT = buildMainExtractionPrompt(true, true);
+const EXTRACTION_SYSTEM_PROMPT_GENERAL_ONLY = buildMainExtractionPrompt(false, false);
+
+const PRICING_SYSTEM_PROMPT = `Você é um assistente que transcreve tabelas de preços de contratos comerciais. Leia o texto fornecido (que contém uma tabela de preços/pricing schedule) e devolva SOMENTE um objeto JSON válido (sem markdown, sem crases, sem texto antes ou depois), neste formato:
+
+{
+  "itensPreco": [
+    {"codigo": "1", "descricao": "", "unidade": "Lump Sum", "precoUnitario": 0, "quantidade": ""}
+  ]
+}
+
+Regras importantes:
+- Transcreva TODAS as linhas da tabela, uma por item — mesmo que sejam muitas (10, 20, 50 linhas ou mais). Não resuma nem agrupe itens.
+- "codigo" é o número/código do item na tabela, se houver (ex.: "1", "2", "3.1"); deixe vazio se não houver.
+- "descricao" em português, resumida em suas próprias palavras (não precisa copiar o texto original em inglês literalmente, mas mantenha o sentido técnico).
+- "unidade" é a unidade de medida (ex.: Lump Sum, Day Rate, dia, unidade, hora).
+- "precoUnitario" é o valor numérico (sem "R$", sem separador de milhar, ponto decimal).
+- "quantidade" é a quantidade contratada SE a tabela especificar uma quantidade fixa; deixe como string vazia "" quando for só preço unitário sem quantidade definida (comum em itens de day-rate).
+- Nunca invente valores — se um campo não estiver claro no texto, deixe vazio/0.
+- Se não houver nenhuma tabela de preços reconhecível no texto, devolva {"itensPreco": []}.`;
+
+const MILESTONE_SYSTEM_PROMPT = `Você é um assistente que transcreve cronogramas de marcos de faturamento (billing milestones / schedule of payments) de contratos comerciais. Leia o texto fornecido e devolva SOMENTE um objeto JSON válido (sem markdown, sem crases, sem texto antes ou depois), neste formato:
+
+{
+  "marcos": [
+    {"codigo": "BM1", "descricao": "", "percentual": "15%", "valor": 0, "gatilho": "descreva objetivamente o que libera o faturamento deste marco", "dataPrevisao": ""}
+  ]
+}
+
+Regras importantes:
+- Liste TODOS os marcos/parcelas do cronograma, mesmo que sejam muitos.
+- "codigo" é o identificador do marco (ex.: BM1, BM2, Milestone 1); se o contrato não numerar, invente um código sequencial BM1, BM2...
+- "descricao" em português, objetiva.
+- "percentual" é o percentual do valor total, como string (ex.: "15%"); deixe vazio se o marco não for percentual.
+- "valor" é o valor em número (sem "R$", sem separador de milhar, ponto decimal); deixe 0 se só houver percentual, sem valor fixo informado.
+- "gatilho" é o campo mais importante: descreva com precisão a condição objetiva que libera aquele faturamento (ex.: "assinatura do contrato", "mobilização da embarcação e calibração concluída", "entrega do relatório final draft"), baseando-se no texto fornecido — não apenas repita o nome do marco.
+- "dataPrevisao" é a data prevista, se houver (senão deixe vazio ou "TBC" se o texto disser isso).
+- Nunca invente valores — se um campo não estiver claro no texto, deixe vazio/0.
+- Se não houver nenhum cronograma de marcos reconhecível no texto, devolva {"marcos": []}.`;
 
 async function callClaudeExtraction(contractText) {
   const trimmed = trimForModel(contractText);
   return callClaudeViaFunction(EXTRACTION_SYSTEM_PROMPT, 'Texto extraído do contrato (pode conter quebras de layout do PDF):\n\n' + trimmed);
+}
+
+// Usado para contratos grandes onde a tabela de preços e/ou os marcos foram
+// indicados em páginas separadas: roda cada parte em paralelo, cada uma com seu
+// próprio orçamento de resposta, para não estourar o limite de tokens nem o
+// tempo da função quando há muitos itens/marcos. pricingText e milestoneText
+// são opcionais — se vazios, essa parte simplesmente não é chamada.
+async function callClaudeExtractionSplit(generalText, pricingText, milestoneText) {
+  const calls = [
+    callClaudeViaFunction(EXTRACTION_SYSTEM_PROMPT_GENERAL_ONLY, 'Texto extraído do contrato (pode conter quebras de layout do PDF):\n\n' + trimForModel(generalText)),
+  ];
+  if (pricingText) calls.push(callClaudeViaFunction(PRICING_SYSTEM_PROMPT, 'Texto da tabela de preços extraído do PDF:\n\n' + pricingText));
+  if (milestoneText) calls.push(callClaudeViaFunction(MILESTONE_SYSTEM_PROMPT, 'Texto do cronograma de marcos extraído do PDF:\n\n' + milestoneText));
+
+  const results = await Promise.all(calls);
+  const general = results[0];
+  let idx = 1;
+  const pricing = pricingText ? results[idx++] : null;
+  const milestones = milestoneText ? results[idx++] : null;
+  return {
+    ...general,
+    itensPreco: pricing ? (pricing.itensPreco || []) : [],
+    marcos: milestones ? (milestones.marcos || []) : [],
+  };
 }
 
 const ADITIVO_SYSTEM_PROMPT = `Você é um assistente que analisa aditivos/termos aditivos de contratos comerciais para uma ferramenta de gestão de faturamento. Você recebe (1) um resumo em JSON dos dados atuais do contrato original e (2) o texto extraído do PDF do aditivo. Compare os dois e devolva SOMENTE um objeto JSON válido (sem markdown, sem crases, sem texto antes ou depois) no formato:
@@ -3011,20 +3086,18 @@ async function proceedToAnalysis() {
   // automático de trimForModel entra em ação depois, se ainda for muito grande).
   if (!validRanges.length && !pricingText && !milestoneText) baseText = wizard.pages.join('\n\n');
 
-  // Teto de segurança: as páginas de preços/marcos indicadas pelo usuário SEMPRE
-  // entram inteiras (são o mais importante); as "outras páginas" gerais são
-  // cortadas (início + fim) se a soma ficar grande demais, para a análise não
-  // estourar o tempo máximo da função.
+  // Teto de segurança: só se aplica às "outras páginas" gerais (cortadas início+fim
+  // se ficarem grandes demais, pra essa parte não estourar o tempo da função).
+  // A tabela de preços e os marcos NÃO entram nesse teto — cada um vai numa
+  // chamada separada e paralela, com seu próprio orçamento de resposta, então
+  // muitas linhas/marcos não são problema.
   const SAFE_CAP = 70000;
-  const remainingBudget = Math.max(SAFE_CAP - pricingText.length - milestoneText.length, 8000);
-  if (baseText.length > remainingBudget) {
-    const half = Math.floor(remainingBudget / 2);
+  if (baseText.length > SAFE_CAP) {
+    const half = Math.floor(SAFE_CAP / 2);
     baseText = baseText.slice(0, half) + '\n\n[... trecho omitido para caber no limite de análise ...]\n\n' + baseText.slice(-half);
   }
 
-  let text = baseText;
-  if (pricingText) text += '\n\n=== TABELA DE PREÇOS DO CONTRATO (páginas ' + wizard.pricingPages.start + '-' + wizard.pricingPages.end + ', indicadas pelo usuário) ===\n' + pricingText;
-  if (milestoneText) text += '\n\n=== MARCOS DE FATURAMENTO DO CONTRATO (páginas ' + wizard.milestonePages.start + '-' + wizard.milestonePages.end + ', indicados pelo usuário) ===\n' + milestoneText;
+  let generalText = baseText;
 
   wizard.awaitingPageSelection = false;
   wizard.step = 2;
@@ -3032,7 +3105,15 @@ async function proceedToAnalysis() {
   wizard.error = null;
   render();
   try {
-    await runAiAnalysis(text);
+    if (pricingText || milestoneText) {
+      const parsed = await callClaudeExtractionSplit(generalText, pricingText, milestoneText);
+      mergeExtractedData(parsed);
+      wizard.duplicateNumber = findContractByNumber(onlyDigits(wizard.data.cliente.cnpj), wizard.data.contrato.numero);
+      wizard.step = 3;
+      render();
+    } else {
+      await runAiAnalysis(generalText);
+    }
   } catch (err) {
     console.error(err);
     wizard.step = 1;

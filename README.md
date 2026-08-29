@@ -100,6 +100,8 @@ git push -u origin main
 
 Acesse a URL do Netlify, entre com o e-mail/senha do primeiro admin (passo 6), vá em **Administração** na barra lateral e comece a convidar o resto da equipe.
 
+**Três chamadas em paralelo para contratos grandes**: quando você indica as páginas da tabela de preços e/ou dos marcos, cada uma roda em uma chamada de IA **separada e simultânea** — dados gerais, tabela de preços e marcos, cada uma com seu próprio limite de resposta. Isso significa que uma tabela de preços com muitas linhas, ou um cronograma com muitos marcos, não competem por espaço entre si nem com o resto da extração.
+
 ## Itens de preço, Proforma e marcos com múltiplas linhas
 
 Cada contrato agora tem, na aba **Marcos de faturamento**, um catálogo de **Itens de preço** (igual ao Anexo E — item, descrição, unidade, preço unitário). Em **Gerenciar faturamento**, cada marco tem um botão **"Linhas"** onde você informa a quantidade lançada de cada item **naquela rodada específica** — útil quando um mesmo BM cobre mais de uma linha de medição (ex.: um marco percentual simples + itens de day-rate do período).
