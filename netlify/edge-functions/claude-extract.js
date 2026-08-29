@@ -6,31 +6,31 @@
 // A chave continua só no servidor (variável de ambiente ANTHROPIC_API_KEY),
 // nunca no navegador.
 
-export default async (request) => {
-  if (request.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Método não permitido.' }), { status: 405 });
-  }
-
-  const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
-  if (!apiKey) {
-    return new Response(JSON.stringify({
-      error: 'ANTHROPIC_API_KEY não configurada no Netlify. Vá em Site configuration → Environment variables e adicione essa chave.',
-    }), { status: 500 });
-  }
-
-  let payload;
+export default async (request, context) => {
   try {
-    payload = await request.json();
-  } catch (e) {
-    return new Response(JSON.stringify({ error: 'Corpo da requisição inválido.' }), { status: 400 });
-  }
+    if (request.method !== 'POST') {
+      return new Response(JSON.stringify({ error: 'Método não permitido.' }), { status: 405 });
+    }
 
-  const { system, userContent, maxTokens } = payload;
-  if (!userContent) {
-    return new Response(JSON.stringify({ error: 'Faltou o conteúdo a analisar (userContent).' }), { status: 400 });
-  }
+    const apiKey = Netlify.env.get('ANTHROPIC_API_KEY');
+    if (!apiKey) {
+      return new Response(JSON.stringify({
+        error: 'ANTHROPIC_API_KEY não configurada no Netlify. Vá em Site configuration → Environment variables e adicione essa chave.',
+      }), { status: 500 });
+    }
 
-  try {
+    let payload;
+    try {
+      payload = await request.json();
+    } catch (e) {
+      return new Response(JSON.stringify({ error: 'Corpo da requisição inválido.' }), { status: 400 });
+    }
+
+    const { system, userContent, maxTokens } = payload;
+    if (!userContent) {
+      return new Response(JSON.stringify({ error: 'Faltou o conteúdo a analisar (userContent).' }), { status: 400 });
+    }
+
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -52,7 +52,12 @@ export default async (request) => {
     }
     return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (err) {
-    return new Response(JSON.stringify({ error: 'Erro ao chamar a Anthropic: ' + err.message }), { status: 500 });
+    // Rede de segurança: qualquer erro inesperado ainda volta como JSON legível,
+    // nunca como uma página de erro genérica que o front-end não consegue interpretar.
+    return new Response(JSON.stringify({ error: 'Erro inesperado na função: ' + (err && err.message ? err.message : String(err)) }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 };
 
