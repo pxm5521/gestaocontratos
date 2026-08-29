@@ -46,7 +46,17 @@ export default async (request, context) => {
       }),
     });
 
-    const data = await resp.json();
+    const rawText = await resp.text();
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch (e) {
+      // A resposta da Anthropic (ou de algo no caminho) não veio em JSON.
+      // Devolve um trecho do corpo bruto para diagnóstico, em vez de um erro genérico.
+      return new Response(JSON.stringify({
+        error: 'Resposta não-JSON recebida (HTTP ' + resp.status + '). Início do corpo: ' + rawText.slice(0, 300),
+      }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+    }
     if (!resp.ok) {
       return new Response(JSON.stringify({ error: data.error?.message || 'Erro na API da Anthropic.', details: data }), { status: resp.status });
     }
