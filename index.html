@@ -572,7 +572,7 @@ function extractJsonFromClaudeResponse(data) {
 }
 
 async function callClaudeViaFunction(system, userContent) {
-  const response = await fetch('/.netlify/functions/claude-extract', {
+  const response = await fetch('/api/claude-extract', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ system, userContent, maxTokens: 4096 }),

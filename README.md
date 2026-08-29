@@ -44,12 +44,14 @@ Abra `index.html`, procure por `COLE_AQUI` (Ctrl+F) e substitua o bloco `firebas
 
 ## 6. Configurar a chave da Anthropic (para a leitura automática por IA funcionar)
 
-A leitura automática de contratos por IA precisa de uma função de servidor (já incluída no projeto, em `netlify/functions/claude-extract.js`) que guarda sua chave da Anthropic em segredo. Sem isso, o upload de contrato dá erro "Failed to fetch".
+A leitura automática de contratos por IA precisa de uma função de servidor (já incluída no projeto, em `netlify/edge-functions/claude-extract.js`) que guarda sua chave da Anthropic em segredo. Sem isso, o upload de contrato dá erro "Failed to fetch". Essa função é do tipo **Edge Function** (não a "Netlify Function" clássica) — foi escolhida de propósito porque analisar um contrato inteiro com IA pode levar mais de 10 segundos, e as funções clássicas são interrompidas nesse limite (erro 504); Edge Functions não têm essa trava.
 
 1. Crie uma conta em https://console.anthropic.com (se ainda não tiver) e gere uma chave em **API Keys → Create Key**. Copie a chave (começa com `sk-ant-...`).
 2. No Netlify, abra o site → **Site configuration → Environment variables → Add a variable**.
 3. Key: `ANTHROPIC_API_KEY` — Value: cole a chave copiada. Salvar.
 4. Vá em **Deploys** e clique em **Trigger deploy → Deploy site** (as variáveis de ambiente só valem a partir do próximo deploy).
+
+**Se o deploy falhar com "Secrets scanning found secrets in build"**: o Netlify pode confundir a `apiKey` do Firebase (que fica visível no `index.html` de propósito — não é segredo, é protegida pelas regras do Firestore/Storage) com uma chave vazada. Adicione mais uma variável de ambiente: Key `SECRETS_SCAN_SMART_DETECTION_ENABLED`, Value `false`, e faça o deploy de novo.
 
 Isso tem custo — a Anthropic cobra por uso da API (não é o mesmo plano do Claude.ai). Para o volume de uma equipe pequena analisando contratos ocasionalmente, o custo tende a ser bem baixo, mas vale acompanhar em **console.anthropic.com → Usage**.
 
