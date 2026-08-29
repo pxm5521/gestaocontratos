@@ -340,7 +340,7 @@ let currentMember = null; // {nome, email, role, status} — preenchido após lo
 
 function isAdminUser() { return !!currentMember && currentMember.role === 'admin'; }
 
-const BUSINESS_UNITS = ['Oceanografia', 'Geotecnia', 'Geofísica', 'Meio-Ambiente', 'Resiliência', 'Sustentabilidade', 'Risco e Segurança Operacional'];
+const BUSINESS_UNITS = ['Oceanografia', 'Geotecnia', 'Geofísica', 'Monitoramento Ambiental'];
 
 const ADITIVO_FIELD_LABELS = {
   dataTermino: 'Data de término',
@@ -689,7 +689,7 @@ const EXTRACTION_SYSTEM_PROMPT = `Você é um assistente que extrai dados estrut
 }
 
 Regras importantes:
-- "unidadeNegocio" deve ser uma lista escolhida entre: Oceanografia, Geotecnia, Geofísica, Meio-Ambiente, Resiliência, Sustentabilidade, Risco e Segurança Operacional (as que se aplicarem ao escopo, pode ser mais de uma ou nenhuma). Baseie-se no tipo de serviço técnico descrito no escopo (ex.: CPTs e amostragem de solo = Geotecnia; sonar, magnetômetro, sub-bottom profiler = Geofísica; levantamento oceanográfico geral = Oceanografia).
+- "unidadeNegocio" deve ser uma lista escolhida entre: Oceanografia, Geotecnia, Geofísica, Monitoramento Ambiental (as que se aplicarem ao escopo, pode ser mais de uma ou nenhuma). Baseie-se no tipo de serviço técnico descrito no escopo (ex.: CPTs e amostragem de solo = Geotecnia; sonar, magnetômetro, sub-bottom profiler = Geofísica; levantamento oceanográfico geral = Oceanografia; monitoramento de qualidade da água/fauna/impacto ambiental = Monitoramento Ambiental).
 - CNPJ deve ser só os 14 dígitos, sem formatação.
 - Datas sempre em AAAA-MM-DD; se não encontrar, deixe string vazia "".
 - "medicao" é APENAS a unidade de medição comercial do preço: Lump Sum, Day Rate, Por HH ou similar — NUNCA descreva aqui o cronograma/marcos de faturamento (isso vai em "marcos"), são coisas diferentes.
