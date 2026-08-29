@@ -952,9 +952,148 @@ function buildLineTokenMap(billing, contractLines, maxSlots) {
     map[`{{LINHA${i}_VALOR_UNIT}}`] = it ? it.valorUnit.toLocaleString('pt-BR', {minimumFractionDigits:2}) : '';
   }
   if (items.length > maxSlots) {
-    toast(`Atenção: este marco tem ${items.length} linhas, mas o modelo só tem ${maxSlots} espaço(s). Amplie o modelo com mais linhas LINHA${maxSlots+1}_... se precisar.`, 'err');
+    toast(`Atenção: este marco tem ${items.length} linha(s), mas o modelo não tem nenhum token {{LINHA1_...}} para preenchê-las. Adicione ao menos uma linha de item no modelo de Excel.`, 'err');
   }
   return map;
+}
+
+function parseCellRef(s) {
+  const m = s.match(/^(\$?)([A-Z]{1,3})(\$?)(\d+)$/);
+  return { colDollar: m[1], col: m[2], rowDollar: m[3], row: parseInt(m[4], 10) };
+}
+function buildCellRef(p, newRow) {
+  return p.colDollar + p.col + p.rowDollar + newRow;
+}
+
+function adjustFormulaForInsert(formula, insertAtRow0, extraRows) {
+  const rangePattern = /(\$?[A-Z]{1,3}\$?\d+):(\$?[A-Z]{1,3}\$?\d+)/g;
+  let result = formula.replace(rangePattern, (full, refA, refB) => {
+    const a = parseCellRef(refA), b = parseCellRef(refB);
+    let newA = a.row, newB = b.row;
+    const startRow0 = a.row - 1, endRow0 = b.row - 1;
+    if (insertAtRow0 <= startRow0) {
+      newA = a.row + extraRows;
+      newB = b.row + extraRows;
+    } else if (insertAtRow0 > startRow0 && insertAtRow0 <= endRow0 + 1) {
+      newB = b.row + extraRows; // insertion at/inside the range -> extend the end (append case included)
+    }
+    return buildCellRef(a, newA) + ':' + buildCellRef(b, newB);
+  });
+  result = result.replace(/(?<!:)\b(\$?[A-Z]{1,3}\$?)(\d+)\b(?!:)/g, (m, colPart, rowStr) => {
+    const rowNum0 = parseInt(rowStr, 10) - 1;
+    if (rowNum0 >= insertAtRow0) return colPart + (rowNum0 + extraRows + 1);
+    return m;
+  });
+  return result;
+}
+
+// Se o número de itens a preencher for maior do que o modelo já tem de "slots"
+// LINHAn_..., insere linhas extras logo após o bloco existente, clonando o
+// formato da última linha do modelo, e ajusta fórmulas/mesclagens que
+// referenciam esse bloco (ex.: a soma do total).
+function ensureEnoughLineSlots(wb, neededCount) {
+  wb.SheetNames.forEach(sheetName => {
+    const ws = wb.Sheets[sheetName];
+    if (!ws['!ref']) return;
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    let minRow = null, maxRow = null;
+    for (let r = range.s.r; r <= range.e.r; r++) {
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const addr = XLSX.utils.encode_cell({ r, c });
+        const cell = ws[addr];
+        if (cell && typeof cell.v === 'string' && /\{\{LINHA\d+_/.test(cell.v)) {
+          if (minRow === null || r < minRow) minRow = r;
+          if (maxRow === null || r > maxRow) maxRow = r;
+        }
+      }
+    }
+    if (minRow === null) return;
+    const existingSlots = maxRow - minRow + 1;
+    if (neededCount <= existingSlots) return;
+
+    const extraRows = neededCount - existingSlots;
+    const insertAtRow0 = maxRow + 1;
+    const templateRowIdx0 = maxRow;
+
+    Object.keys(ws).forEach(addr => {
+      if (addr[0] === '!') return;
+      const cell = ws[addr];
+      if (cell && cell.f) cell.f = adjustFormulaForInsert(cell.f, insertAtRow0, extraRows);
+    });
+
+    const toMove = Object.keys(ws)
+      .filter(a => a[0] !== '!')
+      .map(a => ({ addr: a, cell: ws[a], pos: XLSX.utils.decode_cell(a) }))
+      .filter(x => x.pos.r >= insertAtRow0)
+      .sort((a, b) => b.pos.r - a.pos.r);
+    toMove.forEach(({ addr, cell, pos }) => {
+      delete ws[addr];
+      const newAddr = XLSX.utils.encode_cell({ r: pos.r + extraRows, c: pos.c });
+      ws[newAddr] = cell;
+    });
+
+    for (let i = 0; i < extraRows; i++) {
+      const destRow0 = insertAtRow0 + i;
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const srcAddr = XLSX.utils.encode_cell({ r: templateRowIdx0, c });
+        const src = ws[srcAddr];
+        if (src) {
+          const destAddr = XLSX.utils.encode_cell({ r: destRow0, c });
+          const cloned = JSON.parse(JSON.stringify(src));
+          if (cloned.f) {
+            const delta = destRow0 - templateRowIdx0;
+            cloned.f = cloned.f.replace(/(\$?)([A-Z]{1,3})(\$?)(\d+)/g, (m, d1, col, d2, rowStr) => {
+              const rn = parseInt(rowStr, 10) - 1;
+              if (rn === templateRowIdx0) return d1 + col + d2 + (rn + delta + 1);
+              return m;
+            });
+          }
+          ws[destAddr] = cloned;
+        }
+      }
+    }
+
+    for (let i = 0; i < extraRows; i++) {
+      const destRow0 = insertAtRow0 + i;
+      const newIndex = existingSlots + i + 1;
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const addr = XLSX.utils.encode_cell({ r: destRow0, c });
+        const cell = ws[addr];
+        if (cell && typeof cell.v === 'string') {
+          cell.v = cell.v.replace(/\{\{LINHA\d+_/g, `{{LINHA${newIndex}_`);
+          if (cell.w) cell.w = cell.v;
+        }
+      }
+    }
+
+    const newEndRow = range.e.r + extraRows;
+    ws['!ref'] = XLSX.utils.encode_range({ s: range.s, e: { r: newEndRow, c: range.e.c } });
+
+    if (ws['!merges']) {
+      const newMerges = [];
+      ws['!merges'].forEach(m => {
+        if (m.s.r >= insertAtRow0) newMerges.push({ s: { r: m.s.r + extraRows, c: m.s.c }, e: { r: m.e.r + extraRows, c: m.e.c } });
+        else newMerges.push(m);
+      });
+      const templateMerges = ws['!merges'].filter(m => m.s.r === templateRowIdx0 && m.e.r === templateRowIdx0);
+      for (let i = 0; i < extraRows; i++) {
+        const destRow0 = insertAtRow0 + i;
+        templateMerges.forEach(m => newMerges.push({ s: { r: destRow0, c: m.s.c }, e: { r: destRow0, c: m.e.c } }));
+      }
+      ws['!merges'] = newMerges;
+    }
+
+    if (ws['!rows']) {
+      const newRows = [];
+      ws['!rows'].forEach((rowInfo, idx) => {
+        if (idx >= insertAtRow0) newRows[idx + extraRows] = rowInfo;
+        else newRows[idx] = rowInfo;
+      });
+      const templateRowInfo = ws['!rows'][templateRowIdx0];
+      for (let i = 0; i < extraRows; i++) newRows[insertAtRow0 + i] = templateRowInfo;
+      ws['!rows'] = newRows;
+    }
+  });
 }
 
 function applyTokensToWorkbook(wb, tokenMap) {
@@ -997,8 +1136,10 @@ function downloadWorkbook(wb, fileName) {
 async function generateBmFile(client, contract, billing) {
   if (!contract.bmTemplateUrl) throw new Error('Este contrato ainda não tem um modelo de BM em Excel cadastrado.');
   const wb = await loadTemplateWorkbook(contract.bmTemplateUrl);
-  const maxSlots = detectMaxLineSlots(wb);
   const lines = contractLinesForContract(contract.id);
+  const itemCount = (billing.linhas || []).filter(l => Number(l.quantidade) > 0).length;
+  let maxSlots = detectMaxLineSlots(wb);
+  if (itemCount > maxSlots) { ensureEnoughLineSlots(wb, itemCount); maxSlots = itemCount; }
   applyTokensToWorkbook(wb, { ...buildTokenMap(client, contract, billing), ...(maxSlots ? buildLineTokenMap(billing, lines, maxSlots) : {}) });
   const fileName = 'BM_' + (billing.codigo || 'marco') + '_' + (contract.numero || contract.id).toString().replace(/[^\w-]/g, '') + '.xlsx';
   downloadWorkbook(wb, fileName);
@@ -1008,8 +1149,10 @@ async function generateBmFile(client, contract, billing) {
 async function generateProformaFile(client, contract, billing) {
   if (!contract.proformaTemplateUrl) throw new Error('Este contrato ainda não tem um modelo de Proforma em Excel cadastrado.');
   const wb = await loadTemplateWorkbook(contract.proformaTemplateUrl);
-  const maxSlots = detectMaxLineSlots(wb);
   const lines = contractLinesForContract(contract.id);
+  const itemCount = (billing.linhas || []).filter(l => Number(l.quantidade) > 0).length;
+  let maxSlots = detectMaxLineSlots(wb);
+  if (itemCount > maxSlots) { ensureEnoughLineSlots(wb, itemCount); maxSlots = itemCount; }
   applyTokensToWorkbook(wb, { ...buildTokenMap(client, contract, billing), ...(maxSlots ? buildLineTokenMap(billing, lines, maxSlots) : {}) });
   const fileName = 'Proforma_' + (billing.codigo || 'marco') + '_' + (contract.numero || contract.id).toString().replace(/[^\w-]/g, '') + '.xlsx';
   downloadWorkbook(wb, fileName);
