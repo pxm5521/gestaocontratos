@@ -42,7 +42,18 @@ Site estático (um único `index.html`, sem processo de build) que usa:
 
 Abra `index.html`, procure por `COLE_AQUI` (Ctrl+F) e substitua o bloco `firebaseConfig` inteiro pelos valores copiados no passo 1.
 
-## 6. Cadastrar o PRIMEIRO administrador (manual, só uma vez)
+## 6. Configurar a chave da Anthropic (para a leitura automática por IA funcionar)
+
+A leitura automática de contratos por IA precisa de uma função de servidor (já incluída no projeto, em `netlify/functions/claude-extract.js`) que guarda sua chave da Anthropic em segredo. Sem isso, o upload de contrato dá erro "Failed to fetch".
+
+1. Crie uma conta em https://console.anthropic.com (se ainda não tiver) e gere uma chave em **API Keys → Create Key**. Copie a chave (começa com `sk-ant-...`).
+2. No Netlify, abra o site → **Site configuration → Environment variables → Add a variable**.
+3. Key: `ANTHROPIC_API_KEY` — Value: cole a chave copiada. Salvar.
+4. Vá em **Deploys** e clique em **Trigger deploy → Deploy site** (as variáveis de ambiente só valem a partir do próximo deploy).
+
+Isso tem custo — a Anthropic cobra por uso da API (não é o mesmo plano do Claude.ai). Para o volume de uma equipe pequena analisando contratos ocasionalmente, o custo tende a ser bem baixo, mas vale acompanhar em **console.anthropic.com → Usage**.
+
+## 7. Cadastrar o PRIMEIRO administrador (manual, só uma vez)
 
 A página de Administração só existe *dentro* do site — então o primeiríssimo admin precisa ser criado direto no Firebase Console, sem passar pelo convite:
 
@@ -59,7 +70,7 @@ A página de Administração só existe *dentro* do site — então o primeirís
      | `status` | string | `ativo` |
 3. Salvar. Pronto — esse é o único cadastro manual; todo o resto (convidar as próximas pessoas) você faz pela página de Administração dentro do site.
 
-## 7. Subir para o GitHub
+## 8. Subir para o GitHub
 
 ```powershell
 cd caminho\para\esta\pasta
@@ -71,13 +82,13 @@ git remote add origin https://github.com/SEU-USUARIO/contratos-ocp.git
 git push -u origin main
 ```
 
-## 8. Publicar no Netlify
+## 9. Publicar no Netlify
 
 1. https://app.netlify.com → **Add new site → Import an existing project** → conecte o GitHub → escolha o repositório.
 2. Build command: em branco. Publish directory: `.`
 3. **Deploy site**. Você recebe uma URL tipo `https://algum-nome.netlify.app`.
 
-## 9. Autorizar o domínio no Firebase
+## 10. Autorizar o domínio no Firebase
 
 **Authentication → Settings → Authorized domains → Add domain** → cole o domínio do Netlify (sem `https://`). Sem isso, login e envio de convite não funcionam no site publicado.
 
