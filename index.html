@@ -554,7 +554,7 @@ async function extractPdfText(file, onProgress) {
 }
 
 function trimForModel(text) {
-  const HEAD = 40000, TAIL = 30000;
+  const HEAD = 22000, TAIL = 13000;
   if (text.length <= HEAD + TAIL) return text;
   return text.slice(0, HEAD) + '\n\n[... trecho intermediário omitido para caber no limite de análise ...]\n\n' + text.slice(-TAIL);
 }

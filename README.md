@@ -55,6 +55,8 @@ A leitura automática de contratos por IA precisa de uma função de servidor (j
 
 Isso tem custo — a Anthropic cobra por uso da API (não é o mesmo plano do Claude.ai). Para o volume de uma equipe pequena analisando contratos ocasionalmente, o custo tende a ser bem baixo, mas vale acompanhar em **console.anthropic.com → Usage**.
 
+**Sobre contratos muito longos** (dezenas ou centenas de páginas): a função usa um modelo mais rápido (Haiku) e analisa só os trechos inicial e final do texto extraído, para caber no tempo máximo que uma Edge Function do Netlify pode rodar (na prática, algo em torno de 40 segundos). Isso cobre bem a maioria dos contratos, mas cláusulas muito no meio de um documento gigante podem não ser vistas pela IA — sempre revise os campos preenchidos antes de salvar, e complete manualmente o que faltar.
+
 ## 7. Cadastrar o PRIMEIRO administrador (manual, só uma vez)
 
 A página de Administração só existe *dentro* do site — então o primeiríssimo admin precisa ser criado direto no Firebase Console, sem passar pelo convite:
