@@ -118,6 +118,16 @@ Um modelo de Proforma pronto (baseado no formato que você já usa) está dispon
 
 Na aba **Ficha do contrato**, o botão "Exportar Word" gera um .docx com o mesmo padrão visual usado no modelo original (banner azul escuro, tabelas com o azul claro da OceanPact), preenchido com os dados atuais do contrato, a Planilha de Preços e os Marcos de Faturamento. É gerado direto no navegador — não precisa de nenhum modelo cadastrado nem de servidor. Como é uma versão gerada por código (não uma cópia exata do arquivo Word original), alguns campos muito específicos do modelo original (como os links de anexo e o logo em imagem) não aparecem — mas todo o conteúdo de dados está lá.
 
+## Motor de geração de Excel (ExcelJS) e correção de formatação
+
+O site trocou de biblioteca para gerar os arquivos de BM/Proforma: agora usa **ExcelJS** em vez da biblioteca anterior, porque a antiga não preservava a formatação do modelo (perdia bordas, cores e negrito ao gerar o arquivo final). Com a troca, o Excel gerado mantém a aparência do modelo original.
+
+**Se você já tinha subido um modelo de BM antes desta atualização, suba de novo** o arquivo 'Modelo_BM_TOKENS_v2.xlsx' (incluso neste zip) no lugar do antigo — ele remove um objeto "Tabela" do Excel que existia no modelo original e que travava a geração com a biblioteca nova. O modelo de Proforma não tinha esse problema e não precisa ser reenviado.
+
+## Faturamento avulso agora fica registrado no sistema
+
+Antes, "Gerar BM/Proforma avulso" só baixava o arquivo, sem guardar nada. Agora, ao clicar em "Gerar BM" ou "Gerar Proforma" na tela avulsa, o site primeiro cria um marco de faturamento no contrato (com código AVULSO-1, AVULSO-2 etc., a data, os itens e quantidades escolhidos, e o valor calculado) — ele passa a aparecer na tabela "Status de cada marco" como qualquer outro marco, e só depois disso o Excel é baixado. Assim, o histórico de tudo o que foi faturado fica guardado no site, não só no arquivo baixado.
+
 ## Perguntas comuns
 
 **A pessoa não recebeu o e-mail de convite.** Confira a caixa de spam. O remetente é algo como `noreply@SEU-PROJETO.firebaseapp.com` — pode demorar 1–2 minutos. Se quiser, use "Reenviar convite" na página de Administração.

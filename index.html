@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Contratos OCP — Gestão &amp; Faturamento</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
 <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
 <style>
 :root{
@@ -913,19 +913,13 @@ function buildTokenMap(client, contract, billing) {
 
 // Detecta o maior índice de slot de linha (LINHA1_, LINHA2_...) presente no modelo,
 // para não tentar preencher além do que o modelo realmente tem.
-function detectMaxLineSlots(wb) {
+function detectMaxLineSlots(ws) {
   let max = 0;
-  wb.SheetNames.forEach(name => {
-    const sheet = wb.Sheets[name];
-    Object.keys(sheet).forEach(cellRef => {
-      if (cellRef[0] === '!') return;
-      const cell = sheet[cellRef];
-      if (cell && typeof cell.v === 'string') {
-        const m = cell.v.match(/{{LINHA(\d+)_/g);
-        if (m) m.forEach(tok => {
-          const n = Number(tok.match(/\d+/)[0]);
-          if (n > max) max = n;
-        });
+  ws.eachRow({ includeEmpty: false }, (row) => {
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      if (typeof cell.value === 'string') {
+        const m = cell.value.match(/{{LINHA(\d+)_/g);
+        if (m) m.forEach(tok => { const n = Number(tok.match(/\d+/)[0]); if (n > max) max = n; });
       }
     });
   });
@@ -965,9 +959,7 @@ function parseCellRef(s) {
   const m = s.match(/^(\$?)([A-Z]{1,3})(\$?)(\d+)$/);
   return { colDollar: m[1], col: m[2], rowDollar: m[3], row: parseInt(m[4], 10) };
 }
-function buildCellRef(p, newRow) {
-  return p.colDollar + p.col + p.rowDollar + newRow;
-}
+function buildCellRef(p, newRow) { return p.colDollar + p.col + p.rowDollar + newRow; }
 
 function adjustFormulaForInsert(formula, insertAtRow0, extraRows) {
   const rangePattern = /(\$?[A-Z]{1,3}\$?\d+):(\$?[A-Z]{1,3}\$?\d+)/g;
@@ -975,12 +967,8 @@ function adjustFormulaForInsert(formula, insertAtRow0, extraRows) {
     const a = parseCellRef(refA), b = parseCellRef(refB);
     let newA = a.row, newB = b.row;
     const startRow0 = a.row - 1, endRow0 = b.row - 1;
-    if (insertAtRow0 <= startRow0) {
-      newA = a.row + extraRows;
-      newB = b.row + extraRows;
-    } else if (insertAtRow0 > startRow0 && insertAtRow0 <= endRow0 + 1) {
-      newB = b.row + extraRows; // insertion at/inside the range -> extend the end (append case included)
-    }
+    if (insertAtRow0 <= startRow0) { newA = a.row + extraRows; newB = b.row + extraRows; }
+    else if (insertAtRow0 > startRow0 && insertAtRow0 <= endRow0 + 1) { newB = b.row + extraRows; }
     return buildCellRef(a, newA) + ':' + buildCellRef(b, newB);
   });
   result = result.replace(/(?<!:)\b(\$?[A-Z]{1,3}\$?)(\d+)\b(?!:)/g, (m, colPart, rowStr) => {
@@ -993,128 +981,82 @@ function adjustFormulaForInsert(formula, insertAtRow0, extraRows) {
 
 // Se o número de itens a preencher for maior do que o modelo já tem de "slots"
 // LINHAn_..., insere linhas extras logo após o bloco existente, clonando o
-// formato da última linha do modelo, e ajusta fórmulas/mesclagens que
+// formato (estilo) da última linha do modelo, e ajusta fórmulas que
 // referenciam esse bloco (ex.: a soma do total).
 function ensureEnoughLineSlots(wb, neededCount) {
-  wb.SheetNames.forEach(sheetName => {
-    const ws = wb.Sheets[sheetName];
-    if (!ws['!ref']) return;
-    const range = XLSX.utils.decode_range(ws['!ref']);
+  wb.eachSheet(ws => {
     let minRow = null, maxRow = null;
-    for (let r = range.s.r; r <= range.e.r; r++) {
-      for (let c = range.s.c; c <= range.e.c; c++) {
-        const addr = XLSX.utils.encode_cell({ r, c });
-        const cell = ws[addr];
-        if (cell && typeof cell.v === 'string' && /\{\{LINHA\d+_/.test(cell.v)) {
-          if (minRow === null || r < minRow) minRow = r;
-          if (maxRow === null || r > maxRow) maxRow = r;
+    ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        if (typeof cell.value === 'string' && /\{\{LINHA\d+_/.test(cell.value)) {
+          if (minRow === null || rowNumber < minRow) minRow = rowNumber;
+          if (maxRow === null || rowNumber > maxRow) maxRow = rowNumber;
         }
-      }
-    }
+      });
+    });
     if (minRow === null) return;
     const existingSlots = maxRow - minRow + 1;
     if (neededCount <= existingSlots) return;
-
     const extraRows = neededCount - existingSlots;
-    const insertAtRow0 = maxRow + 1;
-    const templateRowIdx0 = maxRow;
+    const templateRowNum = maxRow;
+    const insertAfter = maxRow;
+    const insertAtRow0 = insertAfter;
 
-    Object.keys(ws).forEach(addr => {
-      if (addr[0] === '!') return;
-      const cell = ws[addr];
-      if (cell && cell.f) cell.f = adjustFormulaForInsert(cell.f, insertAtRow0, extraRows);
-    });
-
-    const toMove = Object.keys(ws)
-      .filter(a => a[0] !== '!')
-      .map(a => ({ addr: a, cell: ws[a], pos: XLSX.utils.decode_cell(a) }))
-      .filter(x => x.pos.r >= insertAtRow0)
-      .sort((a, b) => b.pos.r - a.pos.r);
-    toMove.forEach(({ addr, cell, pos }) => {
-      delete ws[addr];
-      const newAddr = XLSX.utils.encode_cell({ r: pos.r + extraRows, c: pos.c });
-      ws[newAddr] = cell;
-    });
-
-    for (let i = 0; i < extraRows; i++) {
-      const destRow0 = insertAtRow0 + i;
-      for (let c = range.s.c; c <= range.e.c; c++) {
-        const srcAddr = XLSX.utils.encode_cell({ r: templateRowIdx0, c });
-        const src = ws[srcAddr];
-        if (src) {
-          const destAddr = XLSX.utils.encode_cell({ r: destRow0, c });
-          const cloned = JSON.parse(JSON.stringify(src));
-          if (cloned.f) {
-            const delta = destRow0 - templateRowIdx0;
-            cloned.f = cloned.f.replace(/(\$?)([A-Z]{1,3})(\$?)(\d+)/g, (m, d1, col, d2, rowStr) => {
-              const rn = parseInt(rowStr, 10) - 1;
-              if (rn === templateRowIdx0) return d1 + col + d2 + (rn + delta + 1);
-              return m;
-            });
-          }
-          ws[destAddr] = cloned;
+    // 1) Ajusta fórmulas existentes (com base nas posições originais) afetadas pela inserção.
+    ws.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        if (cell.formula) {
+          const newF = adjustFormulaForInsert(cell.formula, insertAtRow0, extraRows);
+          if (newF !== cell.formula) cell.value = { formula: newF };
         }
-      }
-    }
+      });
+    });
 
+    // 2) Insere as linhas em branco (desloca tudo que está abaixo).
+    const blanks = Array.from({ length: extraRows }, () => []);
+    ws.spliceRows(insertAfter + 1, 0, ...blanks);
+
+    // 3) Clona a última linha do modelo (estilo + padrão) nas novas linhas, renumerando os tokens LINHAn.
+    const templateRow = ws.getRow(templateRowNum);
     for (let i = 0; i < extraRows; i++) {
-      const destRow0 = insertAtRow0 + i;
+      const destRowNum = insertAfter + 1 + i;
+      const destRow = ws.getRow(destRowNum);
       const newIndex = existingSlots + i + 1;
-      for (let c = range.s.c; c <= range.e.c; c++) {
-        const addr = XLSX.utils.encode_cell({ r: destRow0, c });
-        const cell = ws[addr];
-        if (cell && typeof cell.v === 'string') {
-          cell.v = cell.v.replace(/\{\{LINHA\d+_/g, `{{LINHA${newIndex}_`);
-          if (cell.w) cell.w = cell.v;
+      templateRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        const destCell = destRow.getCell(colNumber);
+        if (cell.style) destCell.style = JSON.parse(JSON.stringify(cell.style));
+        if (cell.formula) {
+          const delta = destRowNum - templateRowNum;
+          const shifted = cell.formula.replace(/(\$?)([A-Z]{1,3})(\$?)(\d+)/g, (m, d1, col, d2, rowStr) => {
+            const rn = parseInt(rowStr, 10);
+            if (rn === templateRowNum) return d1 + col + d2 + (rn + delta);
+            return m;
+          });
+          destCell.value = { formula: shifted };
+        } else if (typeof cell.value === 'string') {
+          destCell.value = cell.value.replace(/\{\{LINHA\d+_/g, `{{LINHA${newIndex}_`);
+        } else if (cell.value !== null && cell.value !== undefined) {
+          destCell.value = cell.value;
         }
-      }
-    }
-
-    const newEndRow = range.e.r + extraRows;
-    ws['!ref'] = XLSX.utils.encode_range({ s: range.s, e: { r: newEndRow, c: range.e.c } });
-
-    if (ws['!merges']) {
-      const newMerges = [];
-      ws['!merges'].forEach(m => {
-        if (m.s.r >= insertAtRow0) newMerges.push({ s: { r: m.s.r + extraRows, c: m.s.c }, e: { r: m.e.r + extraRows, c: m.e.c } });
-        else newMerges.push(m);
       });
-      const templateMerges = ws['!merges'].filter(m => m.s.r === templateRowIdx0 && m.e.r === templateRowIdx0);
-      for (let i = 0; i < extraRows; i++) {
-        const destRow0 = insertAtRow0 + i;
-        templateMerges.forEach(m => newMerges.push({ s: { r: destRow0, c: m.s.c }, e: { r: destRow0, c: m.e.c } }));
-      }
-      ws['!merges'] = newMerges;
-    }
-
-    if (ws['!rows']) {
-      const newRows = [];
-      ws['!rows'].forEach((rowInfo, idx) => {
-        if (idx >= insertAtRow0) newRows[idx + extraRows] = rowInfo;
-        else newRows[idx] = rowInfo;
-      });
-      const templateRowInfo = ws['!rows'][templateRowIdx0];
-      for (let i = 0; i < extraRows; i++) newRows[insertAtRow0 + i] = templateRowInfo;
-      ws['!rows'] = newRows;
+      destRow.height = templateRow.height;
+      destRow.commit();
     }
   });
 }
 
 function applyTokensToWorkbook(wb, tokenMap) {
-  wb.SheetNames.forEach(name => {
-    const sheet = wb.Sheets[name];
-    Object.keys(sheet).forEach(cellRef => {
-      if (cellRef[0] === '!') return;
-      const cell = sheet[cellRef];
-      if (cell && typeof cell.v === 'string' && cell.v.indexOf('{{') !== -1) {
-        let v = cell.v;
-        Object.keys(tokenMap).forEach(tok => {
-          if (v.indexOf(tok) !== -1) v = v.split(tok).join(String(tokenMap[tok]));
-        });
-        cell.v = v;
-        if (cell.w) cell.w = v;
-        cell.t = 's';
-      }
+  wb.eachSheet(ws => {
+    ws.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        if (typeof cell.value === 'string' && cell.value.indexOf('{{') !== -1) {
+          let v = cell.value;
+          Object.keys(tokenMap).forEach(tok => {
+            if (v.indexOf(tok) !== -1) v = v.split(tok).join(String(tokenMap[tok]));
+          });
+          cell.value = v;
+        }
+      });
     });
   });
   return wb;
@@ -1124,12 +1066,14 @@ async function loadTemplateWorkbook(url) {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error('Não foi possível baixar o modelo do banco de dados (HTTP ' + resp.status + ').');
   const arrBuf = await resp.arrayBuffer();
-  return XLSX.read(new Uint8Array(arrBuf), { type: 'array', cellStyles: true });
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(arrBuf);
+  return wb;
 }
 
-function downloadWorkbook(wb, fileName) {
-  const out = XLSX.write(wb, { type: 'array', bookType: 'xlsx', cellStyles: true });
-  const blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+async function downloadWorkbook(wb, fileName) {
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = fileName;
@@ -1142,11 +1086,12 @@ async function generateBmFile(client, contract, billing) {
   const wb = await loadTemplateWorkbook(contract.bmTemplateUrl);
   const lines = contractLinesForContract(contract.id);
   const itemCount = (billing.linhas || []).filter(l => Number(l.quantidade) > 0).length;
-  let maxSlots = detectMaxLineSlots(wb);
+  const ws = wb.worksheets[0];
+  let maxSlots = detectMaxLineSlots(ws);
   if (itemCount > maxSlots) { ensureEnoughLineSlots(wb, itemCount); maxSlots = itemCount; }
   applyTokensToWorkbook(wb, { ...buildTokenMap(client, contract, billing), ...(maxSlots ? buildLineTokenMap(billing, lines, maxSlots) : {}) });
   const fileName = 'BM_' + (billing.codigo || 'marco') + '_' + (contract.numero || contract.id).toString().replace(/[^\w-]/g, '') + '.xlsx';
-  downloadWorkbook(wb, fileName);
+  await downloadWorkbook(wb, fileName);
   return fileName;
 }
 
@@ -1155,16 +1100,18 @@ async function generateProformaFile(client, contract, billing) {
   const wb = await loadTemplateWorkbook(contract.proformaTemplateUrl);
   const lines = contractLinesForContract(contract.id);
   const itemCount = (billing.linhas || []).filter(l => Number(l.quantidade) > 0).length;
-  let maxSlots = detectMaxLineSlots(wb);
+  const ws = wb.worksheets[0];
+  let maxSlots = detectMaxLineSlots(ws);
   if (itemCount > maxSlots) { ensureEnoughLineSlots(wb, itemCount); maxSlots = itemCount; }
   applyTokensToWorkbook(wb, { ...buildTokenMap(client, contract, billing), ...(maxSlots ? buildLineTokenMap(billing, lines, maxSlots) : {}) });
   const fileName = 'Proforma_' + (billing.codigo || 'marco') + '_' + (contract.numero || contract.id).toString().replace(/[^\w-]/g, '') + '.xlsx';
-  downloadWorkbook(wb, fileName);
+  await downloadWorkbook(wb, fileName);
   contract.proformaCounter = (contract.proformaCounter || 0) + 1;
   await dbSave('contracts');
   return fileName;
 }
 
+/* ---------- Firebase Storage helpers */
 /* ---------- Firebase Storage helpers (BM templates & cost spreadsheets) ---------- */
 async function uploadFileToStorage(path, file) {
   const { storage, fb } = window.__firebase;
@@ -2120,9 +2067,12 @@ function wireContractDetailEvents(contract, tab) {
             const line = contractLinesForContract(contract.id).find(cl => cl.id === l.lineId);
             return sum + (line ? (Number(line.precoUnitario) || 0) * (Number(l.quantidade) || 0) : 0);
           }, 0);
-        } else {
-          await dbSave('billings');
+          if (!opts.created) {
+            DB.billings.push(billing);
+            opts.created = true;
+          }
         }
+        await dbSave('billings');
       };
 
       renderLinhasModal(billing, contract, client, opts);
@@ -2135,7 +2085,8 @@ function wireContractDetailEvents(contract, tab) {
           await applyLinhas();
           if (!billing.linhas.length) throw new Error('Selecione ao menos um item com quantidade maior que zero antes de gerar.');
           const fileName = await generateBmFile(client, contract, billing);
-          if (!opts.standalone) { if (!billing.bmGeneratedDate) billing.bmGeneratedDate = todayISO(); await dbSave('billings'); }
+          if (!billing.bmGeneratedDate) billing.bmGeneratedDate = todayISO();
+          await dbSave('billings');
           setModalMsg('BM gerado: ' + fileName, false);
           toast('BM gerado: ' + fileName, 'ok');
         } catch (err) {
@@ -2153,7 +2104,8 @@ function wireContractDetailEvents(contract, tab) {
           await applyLinhas();
           if (!billing.linhas.length) throw new Error('Selecione ao menos um item com quantidade maior que zero antes de gerar.');
           const fileName = await generateProformaFile(client, contract, billing);
-          if (!opts.standalone) { if (!billing.proformaGeneratedDate) billing.proformaGeneratedDate = todayISO(); await dbSave('billings'); }
+          if (!billing.proformaGeneratedDate) billing.proformaGeneratedDate = todayISO();
+          await dbSave('billings');
           setModalMsg('Proforma gerada: ' + fileName, false);
           toast('Proforma gerada: ' + fileName, 'ok');
         } catch (err) {
@@ -2176,7 +2128,13 @@ function wireContractDetailEvents(contract, tab) {
 
     const standaloneBtn = document.getElementById('btnOpenStandaloneGen');
     if (standaloneBtn) standaloneBtn.addEventListener('click', () => {
-      const fakeBilling = { codigo: 'AVULSO', descricao: '', gatilho: '', percentual: '', valor: 0, linhas: [], releasedDate: todayISO() };
+      const avulsoCount = billingsForContract(contract.id).filter(b => b.origin === 'avulso').length;
+      const fakeBilling = {
+        id: uid('bm'), contractId: contract.id, codigo: 'AVULSO-' + (avulsoCount + 1), descricao: '',
+        gatilho: '', percentual: '', valor: 0, linhas: [], origin: 'avulso',
+        releasedDate: todayISO(), bmGeneratedDate: '', proformaGeneratedDate: '',
+        bmSentDate: '', proformaSentDate: '', bmApprovedDate: '', nfSentDate: '', paymentDate: '',
+      };
       openGenModal(fakeBilling, { standalone: true });
     });
 
