@@ -556,6 +556,40 @@ function formatDate(iso) {
 
 function todayISO() { return new Date().toISOString().slice(0, 10); }
 
+/* ---------- datas em formato brasileiro (dd/mm/aaaa) ---------- */
+function brToIso(str) {
+  if (!str) return '';
+  const m = String(str).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return '';
+  const d = m[1].padStart(2, '0'), mo = m[2].padStart(2, '0'), y = m[3];
+  const dt = new Date(`${y}-${mo}-${d}T00:00:00`);
+  if (isNaN(dt.getTime()) || dt.getDate() !== Number(d) || (dt.getMonth() + 1) !== Number(mo)) return '';
+  return `${y}-${mo}-${d}`;
+}
+function isoToBr(iso) {
+  if (!iso) return '';
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return '';
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+function dateBrAttrs(iso, extraAttrs, extraClass) {
+  const cls = 'date-br' + (extraClass ? ' ' + extraClass : '');
+  return `type="text" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" class="${cls}" value="${escapeHtml(isoToBr(iso))}" ${extraAttrs || ''}`;
+}
+function wireDateMasks(root) {
+  (root || document).querySelectorAll('.date-br').forEach(el => {
+    if (el.dataset.maskWired) return;
+    el.dataset.maskWired = '1';
+    el.addEventListener('input', () => {
+      let digits = el.value.replace(/\D/g, '').slice(0, 8);
+      let out = digits;
+      if (digits.length > 4) out = digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4);
+      else if (digits.length > 2) out = digits.slice(0, 2) + '/' + digits.slice(2);
+      el.value = out;
+    });
+  });
+}
+
 async function sha256Hex(buffer) {
   const digest = await crypto.subtle.digest('SHA-256', buffer);
   return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -895,15 +929,15 @@ function buildTokenMap(client, contract, billing) {
     '{{FORNECEDOR}}': contract.fornecedorNome || '',
     '{{CNPJ_FORNECEDOR}}': contract.fornecedorCnpj ? formatCNPJ(contract.fornecedorCnpj) : '',
     '{{CONTRATO_NUMERO}}': contract.numero || '',
-    '{{CONTRATO_VALOR_TOTAL}}': contract.valorTotal ? Number(contract.valorTotal).toLocaleString('pt-BR', {minimumFractionDigits:2}) : '',
+    '{{CONTRATO_VALOR_TOTAL}}': Number(contract.valorTotal) || 0,
     '{{MOEDA}}': contract.moeda || '',
     '{{ESCOPO}}': contract.escopo || '',
     '{{MARCO_CODIGO}}': billing.codigo || '',
-    '{{MARCO_NUMERO}}': numMatch ? numMatch[0] : '',
+    '{{MARCO_NUMERO}}': numMatch ? Number(numMatch[0]) : '',
     '{{MARCO_DESCRICAO}}': billing.descricao || '',
     '{{MARCO_GATILHO}}': billing.gatilho || '',
     '{{MARCO_PERCENTUAL}}': billing.percentual || '',
-    '{{MARCO_VALOR}}': billing.valor ? Number(billing.valor).toLocaleString('pt-BR', {minimumFractionDigits:2}) : '',
+    '{{MARCO_VALOR}}': Number(billing.valor) || 0,
     '{{PERIODO_MEDICAO}}': billing.codigo === 'AVULSO' ? (billing.descricao || 'Faturamento avulso') : ordinal + ' Marco (' + (billing.codigo || '') + ')',
     '{{PROFORMA_NUMERO}}': (contract.proformaCounter || 0) + 1,
     '{{DATA_LIBERACAO}}': formatDate(billing.releasedDate),
@@ -947,7 +981,7 @@ function buildLineTokenMap(billing, contractLines, maxSlots) {
     map[`{{LINHA${i}_DESCRICAO}}`] = it ? it.descricao : '';
     map[`{{LINHA${i}_UNIDADE}}`] = it ? it.unidade : '';
     map[`{{LINHA${i}_QTD}}`] = it ? it.qtd : '';
-    map[`{{LINHA${i}_VALOR_UNIT}}`] = it ? it.valorUnit.toLocaleString('pt-BR', {minimumFractionDigits:2}) : '';
+    map[`{{LINHA${i}_VALOR_UNIT}}`] = it ? it.valorUnit : '';
   }
   if (items.length > maxSlots) {
     toast(`Atenção: este marco tem ${items.length} linha(s), mas o modelo não tem nenhum token {{LINHA1_...}} para preenchê-las. Adicione ao menos uma linha de item no modelo de Excel.`, 'err');
@@ -1050,9 +1084,24 @@ function applyTokensToWorkbook(wb, tokenMap) {
     ws.eachRow({ includeEmpty: false }, (row) => {
       row.eachCell({ includeEmpty: false }, (cell) => {
         if (typeof cell.value === 'string' && cell.value.indexOf('{{') !== -1) {
+          const trimmed = cell.value.trim();
+          // Célula é EXATAMENTE um único token: escreve o valor real (número/vazio),
+          // em vez de texto formatado — assim fórmulas que referenciam essa célula funcionam.
+          if (Object.prototype.hasOwnProperty.call(tokenMap, trimmed)) {
+            const val = tokenMap[trimmed];
+            if (typeof val === 'number') { cell.value = val; return; }
+            if (val === '' || val === null || val === undefined) { cell.value = null; return; }
+            cell.value = val;
+            return;
+          }
+          // Token misturado com outro texto na mesma célula: substitui como texto mesmo.
           let v = cell.value;
           Object.keys(tokenMap).forEach(tok => {
-            if (v.indexOf(tok) !== -1) v = v.split(tok).join(String(tokenMap[tok]));
+            if (v.indexOf(tok) !== -1) {
+              const val = tokenMap[tok];
+              const asText = typeof val === 'number' ? val.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : String(val);
+              v = v.split(tok).join(asText);
+            }
           });
           cell.value = v;
         }
@@ -1686,7 +1735,7 @@ function renderFaturamentoTab(contract, client) {
     const dateField = (label, field, val) => `
       <div style="margin-bottom:4px">
         <span class="muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.3px">${label}</span><br/>
-        <input type="date" value="${val || ''}" data-datefield="${field}" data-bid="${b.id}" style="padding:4px 6px;font-size:12px">
+        <input ${dateBrAttrs(val, `data-datefield="${field}" data-bid="${b.id}" style="padding:4px 6px;font-size:12px;width:90px"`)}>
       </div>`;
     const linhasCount = (b.linhas || []).filter(l => Number(l.quantidade) > 0).length;
     return `
@@ -1794,9 +1843,9 @@ function renderContractFormInline(contract) {
         <div class="field"><label>Referência da proposta</label><input type="text" name="propostaRef" value="${escapeHtml(contract.propostaRef||'')}"></div>
       </div>
       <div class="field-row">
-        <div class="field"><label>Data assinatura</label><input type="date" name="dataAssinatura" value="${contract.dataAssinatura||''}"></div>
-        <div class="field"><label>Data início</label><input type="date" name="dataInicio" value="${contract.dataInicio||''}"></div>
-        <div class="field"><label>Data término</label><input type="date" name="dataTermino" value="${contract.dataTermino||''}"></div>
+        <div class="field"><label>Data assinatura</label><input ${dateBrAttrs(contract.dataAssinatura, 'name="dataAssinatura"')}></div>
+        <div class="field"><label>Data início</label><input ${dateBrAttrs(contract.dataInicio, 'name="dataInicio"')}></div>
+        <div class="field"><label>Data término</label><input ${dateBrAttrs(contract.dataTermino, 'name="dataTermino"')}></div>
       </div>
       <div class="field-row">
         <div class="field"><label>Moeda</label>
@@ -1904,7 +1953,8 @@ function wireContractDetailEvents(contract, tab) {
         e.preventDefault();
         const fd = new FormData(e.target);
         const updated = { ...contract };
-        ['fornecedorNome','fornecedorCnpj','numero','propostaRef','dataAssinatura','dataInicio','dataTermino','moeda','medicao','escopo','reembolso','clausulaReajuste','clausulaCancelamento','subcontratacao','riscos','observacoes'].forEach(f => updated[f] = fd.get(f) || '');
+        ['fornecedorNome','fornecedorCnpj','numero','propostaRef','moeda','medicao','escopo','reembolso','clausulaReajuste','clausulaCancelamento','subcontratacao','riscos','observacoes'].forEach(f => updated[f] = fd.get(f) || '');
+        ['dataAssinatura','dataInicio','dataTermino'].forEach(f => updated[f] = brToIso(fd.get(f)));
         updated.valorTotal = Number(fd.get('valorTotal')) || 0;
         updated.prazoPagamentoDias = Number(fd.get('prazoPagamentoDias')) || 30;
         updated.unidadeNegocio = Array.from(document.querySelectorAll('.ub-check:checked')).map(el => el.value);
@@ -2028,7 +2078,12 @@ function wireContractDetailEvents(contract, tab) {
       el.addEventListener('change', async () => {
         const b = DB.billings.find(x => x.id === el.dataset.bid);
         if (!b) return;
-        b[el.dataset.datefield] = el.value;
+        if (el.value.trim() !== '' && !brToIso(el.value)) {
+          toast('Data inválida. Use o formato dd/mm/aaaa.', 'err');
+          el.value = isoToBr(b[el.dataset.datefield]);
+          return;
+        }
+        b[el.dataset.datefield] = brToIso(el.value);
         await dbSave('billings');
         toast('Data atualizada.', 'ok');
         render();
@@ -2197,6 +2252,7 @@ function renderAditivoModal() {
     ${body}
   `);
   document.getElementById('btnCloseAditivo').addEventListener('click', closeModal);
+  wireDateMasks(document.getElementById('modalRoot'));
   wireAditivoEvents();
 }
 
@@ -2236,7 +2292,7 @@ function aditivoStep3Html() {
       <td>${escapeHtml(label)}</td>
       <td class="muted">${isDate ? formatDate(atual) : isMoney ? formatCurrency(atual, contract.moeda) : escapeHtml(String(atual ?? '—')).slice(0,80)}</td>
       <td>${isDate
-        ? `<input type="date" data-aidx="${i}" class="alt-value" value="${a.valorNovo || ''}">`
+        ? `<input ${dateBrAttrs(a.valorNovo, `data-aidx="${i}"`, 'alt-value')}>`
         : isMoney
         ? `<input type="number" step="0.01" data-aidx="${i}" class="alt-value" value="${a.valorNovo || ''}">`
         : `<textarea rows="2" data-aidx="${i}" class="alt-value">${escapeHtml(a.valorNovo || '')}</textarea>`}
@@ -2380,7 +2436,8 @@ async function applyAditivo() {
     const i = Number(cb.dataset.aidx);
     const a = aditivoState.alteracoes[i];
     const valEl = document.querySelector(`.alt-value[data-aidx="${i}"]`);
-    const newVal = a.campo === 'valorTotal' ? Number(valEl.value)||0 : valEl.value;
+    const isDateField = a.campo.toLowerCase().includes('data');
+    const newVal = a.campo === 'valorTotal' ? Number(valEl.value)||0 : isDateField ? brToIso(valEl.value) : valEl.value;
     if (cb.checked) {
       log.changes.push({ campo: a.campo, label: ADITIVO_FIELD_LABELS[a.campo], before: contract[a.campo], after: newVal });
       contract[a.campo] = newVal;
@@ -3002,9 +3059,9 @@ function renderWizardStep3() {
           <div class="field"><label>Referência da proposta</label><input type="text" name="propostaRef" value="${escapeHtml(d.contrato.propostaRef)}"></div>
         </div>
         <div class="field-row">
-          <div class="field"><label>Data assinatura</label><input type="date" name="dataAssinatura" value="${d.contrato.dataAssinatura||''}"></div>
-          <div class="field"><label>Data início</label><input type="date" name="dataInicio" value="${d.contrato.dataInicio||''}"></div>
-          <div class="field"><label>Data término</label><input type="date" name="dataTermino" value="${d.contrato.dataTermino||''}"></div>
+          <div class="field"><label>Data assinatura</label><input ${dateBrAttrs(d.contrato.dataAssinatura, 'name="dataAssinatura"')}></div>
+          <div class="field"><label>Data início</label><input ${dateBrAttrs(d.contrato.dataInicio, 'name="dataInicio"')}></div>
+          <div class="field"><label>Data término</label><input ${dateBrAttrs(d.contrato.dataTermino, 'name="dataTermino"')}></div>
         </div>
         <div class="field-row">
           <div class="field"><label>Moeda</label>
@@ -3072,7 +3129,8 @@ function captureWizardForm() {
   d.cliente.cnpj = onlyDigits(fd.get('clienteCnpj') || '');
   d.fornecedor.nome = fd.get('fornecedorNome') || '';
   d.fornecedor.cnpj = onlyDigits(fd.get('fornecedorCnpj') || '');
-  ['numero','propostaRef','dataAssinatura','dataInicio','dataTermino','moeda','medicao','escopo','reembolso','clausulaReajuste','clausulaCancelamento','subcontratacao','riscos','observacoes'].forEach(f => d.contrato[f] = fd.get(f) || '');
+  ['numero','propostaRef','moeda','medicao','escopo','reembolso','clausulaReajuste','clausulaCancelamento','subcontratacao','riscos','observacoes'].forEach(f => d.contrato[f] = fd.get(f) || '');
+  ['dataAssinatura','dataInicio','dataTermino'].forEach(f => d.contrato[f] = brToIso(fd.get(f)));
   d.contrato.valorTotal = Number(fd.get('valorTotal')) || 0;
   d.contrato.prazoPagamentoDias = Number(fd.get('prazoPagamentoDias')) || 30;
   d.contrato.unidadeNegocio = Array.from(document.querySelectorAll('.ub-check:checked')).map(el => el.value);
@@ -3358,6 +3416,7 @@ function render() {
   else if (route.name === 'novo-contrato') renderNewContract();
   else if (route.name === 'admin') renderAdminPage();
   else renderDashboard();
+  wireDateMasks(document);
 }
 
 

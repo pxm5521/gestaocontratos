@@ -128,6 +128,12 @@ O site trocou de biblioteca para gerar os arquivos de BM/Proforma: agora usa **E
 
 Antes, "Gerar BM/Proforma avulso" só baixava o arquivo, sem guardar nada. Agora, ao clicar em "Gerar BM" ou "Gerar Proforma" na tela avulsa, o site primeiro cria um marco de faturamento no contrato (com código AVULSO-1, AVULSO-2 etc., a data, os itens e quantidades escolhidos, e o valor calculado) — ele passa a aparecer na tabela "Status de cada marco" como qualquer outro marco, e só depois disso o Excel é baixado. Assim, o histórico de tudo o que foi faturado fica guardado no site, não só no arquivo baixado.
 
+## Números e datas nos documentos gerados
+
+Valores (preço unitário, quantidade, valor do marco, valor total) agora são escritos como **número de verdade** nas células que são só um token — antes saíam formatados como texto (ex.: "1.441.800,27"), o que fazia o Excel não reconhecer como número e quebrava fórmulas de soma/multiplicação. Células que misturam texto com um valor (ex.: "CNPJ: {{CNPJ_FORNECEDOR}}") continuam sendo preenchidas como texto, como já era.
+
+Todos os campos de data do site (Ficha do contrato, aba de faturamento, cadastro de contrato, aditivos) agora usam um campo de texto com máscara **dd/mm/aaaa**, digitado manualmente — em vez do seletor nativo do navegador, que mostrava mm/dd/aaaa dependendo da configuração de idioma do computador de cada pessoa. Isso garante o mesmo formato brasileiro pra todo mundo, independente do navegador ou do Windows configurado.
+
 ## Perguntas comuns
 
 **A pessoa não recebeu o e-mail de convite.** Confira a caixa de spam. O remetente é algo como `noreply@SEU-PROJETO.firebaseapp.com` — pode demorar 1–2 minutos. Se quiser, use "Reenviar convite" na página de Administração.
