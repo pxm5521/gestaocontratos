@@ -142,8 +142,8 @@ A coluna "Liberação" foi removida (não é mais necessária nesse fluxo), e a 
 
 ## Clientes editáveis, setor, ponto focal e gerente responsável
 
-- Na página de um cliente agora tem um botão **Editar** — dá pra alterar razão social, **Setor** (ex.: Cabos Submarinos) e o ponto focal (nome/e-mail/telefone).
-- Na Ficha do contrato, o campo **Ponto focal do cliente** (nome/e-mail/telefone) atualiza automaticamente o cadastro do cliente ao salvar.
+- Na página de um cliente agora tem um botão **Editar** — dá pra alterar razão social e **Setor** (ex.: Cabos Submarinos). Os **contatos (pontos focais)** ficam numa tabela separada, e um cliente pode ter quantos quiser.
+- Na Ficha do contrato, o campo **Ponto focal** é uma lista dos contatos já cadastrados no cliente — cada contrato escolhe qual usar, sem duplicar cadastro. Pra adicionar um contato novo, é na página do cliente mesmo (tem um link direto ali na Ficha).
 - Também foi adicionado o campo **Gerente OceanPact responsável**, com busca (digite pra filtrar) e um botão de limpar — a lista vem de um cadastro novo, a aba **Gerentes OceanPact** no menu lateral, onde você cadastra nome, e-mail, telefone e a empresa do grupo de cada gerente.
 
 ## Perguntas comuns

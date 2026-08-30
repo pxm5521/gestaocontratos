@@ -1515,7 +1515,7 @@ function renderClientDetail(cnpj) {
   if (!client) { layout(`<div class="empty-state"><h3>Cliente não encontrado</h3></div>`, { title: 'Cliente' }); return; }
   if (clientEditModeFor !== cnpj) { clientEditMode = false; clientEditModeFor = cnpj; }
   const contracts = contractsForClient(cnpj);
-  const contato = (client.contatos && client.contatos[0]) || {};
+  const contatos = client.contatos || [];
   const rows = contracts.map(c => {
     const t = contractTotals(c.id);
     return `<tr class="clickable" data-goto="contrato/${c.id}/ficha">
@@ -1527,6 +1527,14 @@ function renderClientDetail(cnpj) {
     </tr>`;
   }).join('');
 
+  const contatoRows = contatos.map(ct => `
+    <tr>
+      <td style="min-width:160px"><input type="text" value="${escapeHtml(ct.nome||'')}" data-ctfield="nome" data-ctid="${ct.id}"></td>
+      <td style="min-width:190px"><input type="email" value="${escapeHtml(ct.email||'')}" data-ctfield="email" data-ctid="${ct.id}"></td>
+      <td style="width:150px"><input type="text" value="${escapeHtml(ct.telefone||'')}" data-ctfield="telefone" data-ctid="${ct.id}"></td>
+      <td style="width:40px"><button type="button" class="icon-btn" data-del-contato="${ct.id}" title="Remover contato">${icon('trash')}</button></td>
+    </tr>`).join('');
+
   const infoCard = clientEditMode ? `
     <div class="card card-pad" style="margin-bottom:18px">
       <form id="clientEditForm">
@@ -1535,12 +1543,6 @@ function renderClientDetail(cnpj) {
           <div class="field"><label>Setor</label><input type="text" name="setor" value="${escapeHtml(client.setor||'')}" placeholder="ex: Cabos Submarinos"></div>
         </div>
         <div class="field"><label>CNPJ</label><input type="text" value="${formatCNPJ(client.cnpj)}" disabled></div>
-        <div class="section-title" style="margin-top:6px">Ponto focal</div>
-        <div class="field-row">
-          <div class="field"><label>Nome</label><input type="text" name="contatoNome" value="${escapeHtml(contato.nome||'')}"></div>
-          <div class="field"><label>E-mail</label><input type="email" name="contatoEmail" value="${escapeHtml(contato.email||'')}"></div>
-          <div class="field"><label>Telefone</label><input type="text" name="contatoTelefone" value="${escapeHtml(contato.telefone||'')}"></div>
-        </div>
         <div style="display:flex;gap:10px;margin-top:8px">
           <button type="submit" class="btn btn-primary btn-sm">${icon('check')}Salvar</button>
           <button type="button" class="btn btn-ghost btn-sm" id="btnCancelClientEdit">Cancelar</button>
@@ -1553,14 +1555,29 @@ function renderClientDetail(cnpj) {
           <dt>Razão social</dt><dd><strong>${escapeHtml(client.nome)}</strong></dd>
           <dt>CNPJ</dt><dd class="mono">${formatCNPJ(client.cnpj)}</dd>
           <dt>Setor</dt><dd>${escapeHtml(client.setor || '—')}</dd>
-          <dt>Ponto focal</dt><dd>${contato.nome ? escapeHtml(contato.nome) + (contato.email ? ' · '+escapeHtml(contato.email):'') + (contato.telefone ? ' · '+escapeHtml(contato.telefone):'') : '—'}</dd>
         </div>
         <button class="btn btn-outline btn-sm" id="btnEditClient">${icon('edit')}Editar</button>
       </div>
     </div>`;
 
+  const contatosCard = `
+    <div class="card card-pad" style="margin-bottom:18px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="section-title">Pontos focais (contatos)</div>
+        <button type="button" class="btn btn-outline btn-sm" id="btnAddContato">${icon('plus')}Novo contato</button>
+      </div>
+      <p class="help">Um cliente pode ter mais de um ponto focal — cada contrato escolhe qual desses usar na sua Ficha.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Nome</th><th>E-mail</th><th>Telefone</th><th></th></tr></thead>
+          <tbody>${contatoRows || `<tr><td colspan="4" class="tbl-empty">Nenhum contato cadastrado ainda.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>`;
+
   const html = `
     ${infoCard}
+    ${contatosCard}
     <div class="card">
       <div class="card-pad" style="padding-bottom:0"><div class="section-title">Contratos deste cliente</div></div>
       <div class="table-wrap" style="border:none">
@@ -1587,13 +1604,36 @@ function renderClientDetail(cnpj) {
     const fd = new FormData(form);
     client.nome = fd.get('nome') || client.nome;
     client.setor = (fd.get('setor') || '').trim();
-    const cNome = (fd.get('contatoNome') || '').trim();
-    const cEmail = (fd.get('contatoEmail') || '').trim();
-    const cTelefone = (fd.get('contatoTelefone') || '').trim();
-    client.contatos = (cNome || cEmail || cTelefone) ? [{ nome: cNome, email: cEmail, telefone: cTelefone }] : [];
     await dbSave('clients');
     clientEditMode = false;
     toast('Cliente atualizado.', 'ok');
+    render();
+  });
+
+  document.querySelectorAll('[data-ctfield]').forEach(el => {
+    el.addEventListener('change', async () => {
+      const ct = (client.contatos || []).find(c => c.id === el.dataset.ctid);
+      if (!ct) return;
+      ct[el.dataset.ctfield] = el.value.trim();
+      await dbSave('clients');
+      toast('Contato atualizado.', 'ok');
+      render();
+    });
+  });
+  document.querySelectorAll('[data-del-contato]').forEach(el => {
+    el.addEventListener('click', async () => {
+      if (!confirm('Remover este contato? Contratos que apontam para ele deixarão de mostrar o ponto focal.')) return;
+      client.contatos = (client.contatos || []).filter(c => c.id !== el.dataset.delContato);
+      await dbSave('clients');
+      toast('Contato removido.', 'ok');
+      render();
+    });
+  });
+  const addContatoBtn = document.getElementById('btnAddContato');
+  if (addContatoBtn) addContatoBtn.addEventListener('click', async () => {
+    if (!client.contatos) client.contatos = [];
+    client.contatos.push({ id: uid('ct'), nome: '', email: '', telefone: '' });
+    await dbSave('clients');
     render();
   });
 }
@@ -1655,7 +1695,7 @@ function renderContractDetail(id, tab) {
   const tabbar = tabs.map(t => `<button class="tabbtn ${tab === t.key ? 'active' : ''}" data-tab="${t.key}">${t.label}</button>`).join('');
 
   let body = '';
-  if (tab === 'ficha') body = ficheEditMode ? renderContractFormInline(contract) : renderFichaView(contract, client);
+  if (tab === 'ficha') body = ficheEditMode ? renderContractFormInline(contract, client) : renderFichaView(contract, client);
   else if (tab === 'marcos') body = renderMarcosTab(contract);
   else body = renderFaturamentoTab(contract, client);
 
@@ -1709,7 +1749,7 @@ function renderFichaView(contract, client) {
       <div class="divider"></div>
       <div class="grid grid-2">
         <dl class="kv">
-          <dt>Ponto focal do cliente</dt><dd>${contract.pontoFocalNome ? escapeHtml(contract.pontoFocalNome) + (contract.pontoFocalEmail ? ' · '+escapeHtml(contract.pontoFocalEmail):'') + (contract.pontoFocalTelefone ? ' · '+escapeHtml(contract.pontoFocalTelefone):'') : '—'}</dd>
+          <dt>Ponto focal do cliente</dt><dd>${(() => { const ct = client && (client.contatos||[]).find(c => c.id === contract.pontoFocalId); return ct ? escapeHtml(ct.nome||'') + (ct.email ? ' · '+escapeHtml(ct.email):'') + (ct.telefone ? ' · '+escapeHtml(ct.telefone):'') : '—'; })()}</dd>
         </dl>
         <dl class="kv">
           <dt>Gerente OceanPact responsável</dt><dd>${(() => { const m = DB.managers.find(x => x.id === contract.gerenteId); return m ? escapeHtml(managerLabel(m)) : '—'; })()}</dd>
@@ -1932,9 +1972,11 @@ function renderLinhasModal(billing, contract, client, opts) {
     </div>`);
 }
 /* ---------- inline contract edit form (Ficha tab) ---------- */
-function renderContractFormInline(contract) {
+function renderContractFormInline(contract, client) {
   const ubOptions = BUSINESS_UNITS.map(u => `
     <label class="checkbox-row"><input type="checkbox" value="${u}" class="ub-check" ${((contract.unidadeNegocio||[]).includes(u)) ? 'checked' : ''}> ${u}</label>`).join('');
+  const contatos = (client && client.contatos) || [];
+  const contatoOptions = contatos.map(ct => `<option value="${ct.id}" ${contract.pontoFocalId === ct.id ? 'selected' : ''}>${escapeHtml(ct.nome||'(sem nome)')}${ct.email ? ' — '+escapeHtml(ct.email) : ''}</option>`).join('');
   return `
     <form class="card card-pad" id="fichaEditForm">
       <div class="section-title">Editar dados do contrato</div>
@@ -1952,11 +1994,12 @@ function renderContractFormInline(contract) {
         <div class="field"><label>Data término</label><input ${dateBrAttrs(contract.dataTermino, 'name="dataTermino"')}></div>
       </div>
       <div class="section-title" style="margin-top:6px">Ponto focal do cliente</div>
-      <p class="help" style="margin-top:0">Ao salvar, esse contato também atualiza o cadastro do cliente.</p>
-      <div class="field-row">
-        <div class="field"><label>Nome</label><input type="text" name="pontoFocalNome" value="${escapeHtml(contract.pontoFocalNome||'')}"></div>
-        <div class="field"><label>E-mail</label><input type="email" name="pontoFocalEmail" value="${escapeHtml(contract.pontoFocalEmail||'')}"></div>
-        <div class="field"><label>Telefone</label><input type="text" name="pontoFocalTelefone" value="${escapeHtml(contract.pontoFocalTelefone||'')}"></div>
+      <p class="help" style="margin-top:0">Escolha entre os contatos já cadastrados no cliente. Para adicionar um novo contato, vá na página do cliente${client ? ` (<a class="link" href="#/clientes/${client.cnpj}">abrir</a>)` : ''}.</p>
+      <div class="field"><label>Ponto focal</label>
+        <select name="pontoFocalId">
+          <option value="">— nenhum —</option>
+          ${contatoOptions}
+        </select>
       </div>
       <div class="field"><label>Gerente OceanPact responsável</label>${managerPickerHTML(contract.gerenteId, 'gerenteInputFicha')}</div>
       <div class="field-row">
@@ -2070,20 +2113,11 @@ function wireContractDetailEvents(contract, tab) {
         updated.valorTotal = Number(fd.get('valorTotal')) || 0;
         updated.prazoPagamentoDias = Number(fd.get('prazoPagamentoDias')) || 30;
         updated.unidadeNegocio = Array.from(document.querySelectorAll('.ub-check:checked')).map(el => el.value);
-        updated.pontoFocalNome = (fd.get('pontoFocalNome') || '').trim();
-        updated.pontoFocalEmail = (fd.get('pontoFocalEmail') || '').trim();
-        updated.pontoFocalTelefone = (fd.get('pontoFocalTelefone') || '').trim();
+        updated.pontoFocalId = fd.get('pontoFocalId') || '';
         const gerenteInput = document.getElementById('gerenteInputFicha');
         updated.gerenteId = gerenteInput ? resolveManagerFromInput(gerenteInput) : (contract.gerenteId || '');
         Object.assign(contract, updated);
         await dbSave('contracts');
-
-        // sincroniza o ponto focal com o cadastro do cliente
-        const client = getClient(contract.clientCnpj);
-        if (client && (updated.pontoFocalNome || updated.pontoFocalEmail || updated.pontoFocalTelefone)) {
-          client.contatos = [{ nome: updated.pontoFocalNome, email: updated.pontoFocalEmail, telefone: updated.pontoFocalTelefone }];
-          await dbSave('clients');
-        }
 
         ficheEditMode = false;
         toast('Ficha do contrato atualizada.', 'ok');
@@ -2888,7 +2922,7 @@ async function generateFichaDocx(client, contract) {
   const rows = [
     fichaBannerRow('FICHA DE PASSAGEM DE SERVIÇO COMERCIAL'),
     fichaLabelRow('Cliente', (client ? client.nome : '—') + (client ? ' — CNPJ ' + formatCNPJ(client.cnpj) : '') + (client && client.setor ? ' — Setor: ' + client.setor : '')),
-    fichaLabelRow('Ponto focal do cliente', contract.pontoFocalNome ? contract.pontoFocalNome + (contract.pontoFocalEmail ? ' — '+contract.pontoFocalEmail:'') + (contract.pontoFocalTelefone ? ' — '+contract.pontoFocalTelefone:'') : '—'),
+    fichaLabelRow('Ponto focal do cliente', (() => { const ct = client && (client.contatos||[]).find(c => c.id === contract.pontoFocalId); return ct ? (ct.nome||'') + (ct.email ? ' — '+ct.email:'') + (ct.telefone ? ' — '+ct.telefone:'') : '—'; })()),
     fichaLabelRow('Gerente OceanPact responsável', (() => { const m = DB.managers.find(x => x.id === contract.gerenteId); return m ? managerLabel(m) : '—'; })()),
     fichaLabelRow('Empresa OceanPact (contratada)', (contract.fornecedorNome || '—') + (contract.fornecedorCnpj ? ' — CNPJ ' + formatCNPJ(contract.fornecedorCnpj) : '')),
     fichaTwoColRow('Nº Contrato', contract.numero || '—', 'Proposta', contract.propostaRef || '—'),
