@@ -1761,11 +1761,13 @@ function renderFaturamentoTab(contract, client) {
       <td>${dateField('Proforma aprovada', 'proformaApprovedDate', b.proformaApprovedDate)}</td>
       <td>${dateField('NF enviada', 'nfSentDate', b.nfSentDate)}</td>
       <td>${dateField('Pagamento', 'paymentDate', b.paymentDate)}</td>
-      <td style="white-space:nowrap">
-        <button class="icon-btn" data-edit-billing="${b.id}" title="Editar itens${linhasCount ? ' ('+linhasCount+')' : ''}">${icon('edit')}</button>
-        <button class="icon-btn" data-gen-bm="${b.id}" title="Gerar BM" ${!hasBmTemplate ? 'disabled' : ''}>${icon('sheet')}</button>
-        <button class="icon-btn" data-gen-proforma="${b.id}" title="Gerar Proforma" ${!hasProformaTemplate ? 'disabled' : ''}>${icon('sheet')}</button>
-        <button class="icon-btn" data-del-billing="${b.id}" title="Excluir">${icon('trash')}</button>
+      <td style="white-space:nowrap;min-width:210px">
+        <div style="display:flex;flex-wrap:wrap;gap:4px">
+          <button class="btn btn-outline btn-sm" data-edit-billing="${b.id}" title="Editar marco, itens e quantidades">${icon('edit')}</button>
+          <button class="btn btn-outline btn-sm" data-gen-bm="${b.id}" title="Gerar BM" ${!hasBmTemplate ? 'disabled' : ''}>${icon('sheet')}BM</button>
+          <button class="btn btn-outline btn-sm" data-gen-proforma="${b.id}" title="Gerar Proforma" ${!hasProformaTemplate ? 'disabled' : ''}>${icon('sheet')}Prof.</button>
+          <button class="btn btn-outline btn-sm" data-del-billing="${b.id}" title="Excluir">${icon('trash')}</button>
+        </div>
       </td>
     </tr>`;
   }).join('');
@@ -1816,11 +1818,15 @@ function renderLinhasModal(billing, contract, client, opts) {
       <td style="width:110px"><input type="number" step="0.01" min="0" value="${current[l.id] || ''}" data-line-qty="${l.id}" placeholder="0" style="width:90px"></td>
     </tr>`).join('');
 
-  const title = opts.standalone ? 'Novo faturamento avulso' : 'Editar itens — Marco ' + escapeHtml(billing.codigo);
-  const refField = opts.standalone ? `
-      <div class="field"><label>Referência deste faturamento (aparece no lugar do código/descrição do marco no documento)</label>
+  const title = opts.standalone ? 'Novo faturamento avulso' : 'Editar marco ' + escapeHtml(billing.codigo);
+  const refField = opts.standalone
+    ? `<div class="field"><label>Referência deste faturamento (aparece no lugar do código/descrição do marco no documento)</label>
         <input type="text" id="standaloneRef" placeholder="ex.: Faturamento avulso — Maio/2026" value="${escapeHtml(billing.descricao||'')}">
-      </div>` : '';
+      </div>`
+    : `<div class="field-row">
+        <div class="field" style="max-width:160px"><label>Código do marco</label><input type="text" id="marcoCodigoEdit" value="${escapeHtml(billing.codigo||'')}"></div>
+        <div class="field"><label>Descrição</label><input type="text" id="marcoDescricaoEdit" value="${escapeHtml(billing.descricao||'')}"></div>
+      </div>`;
 
   openModal(`
     <div class="modal-head"><h3>${title}</h3><button class="icon-btn" id="btnCloseLinhas">${icon('x')}</button></div>
@@ -2129,6 +2135,11 @@ function wireContractDetailEvents(contract, tab) {
               return sum + (line ? (Number(line.precoUnitario) || 0) * (Number(l.quantidade) || 0) : 0);
             }, 0);
             if (!opts.created) { DB.billings.push(billing); opts.created = true; }
+          } else {
+            const codEl = document.getElementById('marcoCodigoEdit');
+            const descEl = document.getElementById('marcoDescricaoEdit');
+            if (codEl && codEl.value.trim()) billing.codigo = codEl.value.trim();
+            if (descEl) billing.descricao = descEl.value.trim();
           }
           await dbSave('billings');
           toast('Faturamento salvo.', 'ok');
