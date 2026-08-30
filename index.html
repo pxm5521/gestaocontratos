@@ -183,7 +183,7 @@ input[type=number]::-webkit-inner-spin-button,
 input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 input[type=number]{-moz-appearance:textfield;appearance:textfield}
 /* campo de data em texto (dd/mm/aaaa) + botão de calendário ao lado */
-.date-wrap{display:inline-flex;flex-direction:column;align-items:flex-start;gap:2px;position:relative;max-width:100%}
+.date-wrap{display:inline-flex;flex-direction:column;align-items:center;gap:2px;position:relative;max-width:100%}
 .date-wrap .date-br{width:100%;min-width:0}
 .date-native-helper{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none;left:0;top:0;border:none;padding:0}
 .date-cal-btn{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:22px;height:20px;padding:0;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--blue);cursor:pointer}
@@ -1766,10 +1766,7 @@ function renderFaturamentoTab(contract, client) {
   const rows = bs.map(b => {
     const st = computeStatus(b);
     const dateField = (label, field, val) => `
-      <div style="margin-bottom:4px">
-        <span class="muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.3px">${label}</span><br/>
-        <input ${dateBrAttrs(val, `data-datefield="${field}" data-bid="${b.id}" style="padding:4px 6px;font-size:12px;width:90px"`)}>
-      </div>`;
+      <input ${dateBrAttrs(val, `data-datefield="${field}" data-bid="${b.id}" style="padding:4px 6px;font-size:12px;width:90px"`)}>`;
     const linhasCount = (b.linhas || []).filter(l => Number(l.quantidade) > 0).length;
     return `
     <tr>
