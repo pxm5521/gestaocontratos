@@ -374,10 +374,8 @@ a.link:hover{text-decoration:underline}
 /* ---------- constants ---------- */
 const STATUS_STEPS = [
   { key: 'pendente',   label: 'Pendente',    cls: 'st-pendente'  },
-  { key: 'liberado',   label: 'Liberado',    cls: 'st-liberado'  },
-  { key: 'bmgerado',   label: 'BM Gerado',   cls: 'st-bmgerado'  },
-  { key: 'bmenviado',  label: 'BM Enviado',  cls: 'st-bmenviado' },
-  { key: 'bmaprovado', label: 'BM Aprovado', cls: 'st-bmaprovado'},
+  { key: 'enviado',    label: 'Enviado',     cls: 'st-bmenviado' },
+  { key: 'aprovado',   label: 'Aprovado',    cls: 'st-bmaprovado'},
   { key: 'nfenviada',  label: 'NF Enviada',  cls: 'st-nfenviada' },
   { key: 'pago',       label: 'Pago',        cls: 'st-pago'      },
 ];
@@ -614,10 +612,8 @@ function escapeHtml(s) {
 function computeStatus(b) {
   if (b.paymentDate) return 'pago';
   if (b.nfSentDate) return 'nfenviada';
-  if (b.bmApprovedDate) return 'bmaprovado';
-  if (b.bmSentDate) return 'bmenviado';
-  if (b.bmGeneratedDate) return 'bmgerado';
-  if (b.releasedDate) return 'liberado';
+  if (b.bmApprovedDate && b.proformaApprovedDate) return 'aprovado';
+  if (b.bmSentDate || b.proformaSentDate) return 'enviado';
   return 'pendente';
 }
 
@@ -945,6 +941,20 @@ function buildTokenMap(client, contract, billing) {
   };
 }
 
+// Se alguma linha de item veio oculta no modelo original (às vezes fica assim de uma
+// edição anterior no Excel), reexibe — uma linha de item com dado nunca deve ficar oculta.
+function unhideLineSlotRows(wb) {
+  wb.eachSheet(ws => {
+    ws.eachRow({ includeEmpty: false }, (row) => {
+      let hasLinhaToken = false;
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        if (typeof cell.value === 'string' && /\{\{LINHA\d+_/.test(cell.value)) hasLinhaToken = true;
+      });
+      if (hasLinhaToken && row.hidden) row.hidden = false;
+    });
+  });
+}
+
 // Detecta o maior índice de slot de linha (LINHA1_, LINHA2_...) presente no modelo,
 // para não tentar preencher além do que o modelo realmente tem.
 function detectMaxLineSlots(ws) {
@@ -1138,6 +1148,7 @@ async function generateBmFile(client, contract, billing) {
   const ws = wb.worksheets[0];
   let maxSlots = detectMaxLineSlots(ws);
   if (itemCount > maxSlots) { ensureEnoughLineSlots(wb, itemCount); maxSlots = itemCount; }
+  unhideLineSlotRows(wb);
   applyTokensToWorkbook(wb, { ...buildTokenMap(client, contract, billing), ...(maxSlots ? buildLineTokenMap(billing, lines, maxSlots) : {}) });
   const fileName = 'BM_' + (billing.codigo || 'marco') + '_' + (contract.numero || contract.id).toString().replace(/[^\w-]/g, '') + '.xlsx';
   await downloadWorkbook(wb, fileName);
@@ -1152,6 +1163,7 @@ async function generateProformaFile(client, contract, billing) {
   const ws = wb.worksheets[0];
   let maxSlots = detectMaxLineSlots(ws);
   if (itemCount > maxSlots) { ensureEnoughLineSlots(wb, itemCount); maxSlots = itemCount; }
+  unhideLineSlotRows(wb);
   applyTokensToWorkbook(wb, { ...buildTokenMap(client, contract, billing), ...(maxSlots ? buildLineTokenMap(billing, lines, maxSlots) : {}) });
   const fileName = 'Proforma_' + (billing.codigo || 'marco') + '_' + (contract.numero || contract.id).toString().replace(/[^\w-]/g, '') + '.xlsx';
   await downloadWorkbook(wb, fileName);
@@ -1743,17 +1755,17 @@ function renderFaturamentoTab(contract, client) {
       <td><strong>${escapeHtml(b.codigo)}</strong><div class="muted" style="max-width:220px;font-size:11.5px">${escapeHtml((b.descricao||'').slice(0,70))}</div></td>
       <td class="mono">${formatCurrency(b.valor, contract.moeda)}<div class="muted" style="font-size:11.5px">${escapeHtml(b.percentual||'')}</div></td>
       <td>${statusBadge(st)}</td>
-      <td>${dateField('Liberação', 'releasedDate', b.releasedDate)}</td>
       <td>${dateField('BM enviado', 'bmSentDate', b.bmSentDate)}</td>
       <td>${dateField('Proforma enviada', 'proformaSentDate', b.proformaSentDate)}</td>
-      <td>${dateField('Aprovado (BM+Proforma)', 'bmApprovedDate', b.bmApprovedDate)}</td>
+      <td>${dateField('BM aprovado', 'bmApprovedDate', b.bmApprovedDate)}</td>
+      <td>${dateField('Proforma aprovada', 'proformaApprovedDate', b.proformaApprovedDate)}</td>
       <td>${dateField('NF enviada', 'nfSentDate', b.nfSentDate)}</td>
       <td>${dateField('Pagamento', 'paymentDate', b.paymentDate)}</td>
-      <td style="min-width:160px">
-        <div style="display:flex;flex-direction:column;gap:4px">
-          ${!b.releasedDate ? `<button class="btn btn-accent btn-sm btn-block" data-release="${b.id}">${icon('bolt')}Liberar</button>` : ''}
-          ${b.releasedDate ? `<button class="btn btn-primary btn-sm btn-block" data-open-gen="${b.id}">${icon('sheet')}Gerar BM / Proforma${linhasCount ? ' ('+linhasCount+' itens)' : ''}</button>` : ''}
-        </div>
+      <td style="white-space:nowrap">
+        <button class="icon-btn" data-edit-billing="${b.id}" title="Editar itens${linhasCount ? ' ('+linhasCount+')' : ''}">${icon('edit')}</button>
+        <button class="icon-btn" data-gen-bm="${b.id}" title="Gerar BM" ${!hasBmTemplate ? 'disabled' : ''}>${icon('sheet')}</button>
+        <button class="icon-btn" data-gen-proforma="${b.id}" title="Gerar Proforma" ${!hasProformaTemplate ? 'disabled' : ''}>${icon('sheet')}</button>
+        <button class="icon-btn" data-del-billing="${b.id}" title="Excluir">${icon('trash')}</button>
       </td>
     </tr>`;
   }).join('');
@@ -1773,16 +1785,16 @@ function renderFaturamentoTab(contract, client) {
     </div>
     <div class="card card-pad" style="margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
       <div>
-        <div class="section-title" style="margin-bottom:4px">Gerar sem vincular a um marco</div>
+        <div class="section-title" style="margin-bottom:4px">Novo faturamento sem vincular a um marco</div>
         <p class="help" style="margin:0">Fature direto pelos itens de preço, sem passar por um marco específico — útil para cobranças avulsas ou que não seguem o cronograma de marcos.</p>
       </div>
-      <button class="btn btn-outline" id="btnOpenStandaloneGen">${icon('sheet')}Gerar BM / Proforma avulso</button>
+      <button class="btn btn-outline" id="btnOpenStandaloneGen">${icon('plus')}Novo faturamento avulso</button>
     </div>
     <div class="card">
       <div class="card-pad" style="padding-bottom:0"><div class="section-title">Status de cada marco</div></div>
       <div class="table-wrap" style="border:none">
         <table>
-          <thead><tr><th>Marco</th><th>Valor</th><th>Status</th><th>Liberação</th><th>BM enviado</th><th>Proforma enviada</th><th>Aprovado</th><th>NF enviada</th><th>Pagamento</th><th>Ação</th></tr></thead>
+          <thead><tr><th>Marco</th><th>Valor</th><th>Status</th><th>BM enviado</th><th>Proforma enviada</th><th>BM Aprovado</th><th>Proforma Aprovada</th><th>NF enviada</th><th>Pagamento</th><th>Ação</th></tr></thead>
           <tbody>${rows || `<tr><td colspan="10" class="tbl-empty">Cadastre marcos na aba "Marcos de faturamento" primeiro.</td></tr>`}</tbody>
         </table>
       </div>
@@ -1794,8 +1806,6 @@ function renderLinhasModal(billing, contract, client, opts) {
   const lines = contractLinesForContract(contract.id);
   const current = {};
   (billing.linhas || []).forEach(l => current[l.lineId] = l.quantidade);
-  const hasBm = !!contract.bmTemplateUrl;
-  const hasProforma = !!contract.proformaTemplateUrl;
 
   const rows = lines.map(l => `
     <tr>
@@ -1806,7 +1816,7 @@ function renderLinhasModal(billing, contract, client, opts) {
       <td style="width:110px"><input type="number" step="0.01" min="0" value="${current[l.id] || ''}" data-line-qty="${l.id}" placeholder="0" style="width:90px"></td>
     </tr>`).join('');
 
-  const title = opts.standalone ? 'Gerar BM / Proforma avulso' : 'Gerar BM / Proforma — Marco ' + escapeHtml(billing.codigo);
+  const title = opts.standalone ? 'Novo faturamento avulso' : 'Editar itens — Marco ' + escapeHtml(billing.codigo);
   const refField = opts.standalone ? `
       <div class="field"><label>Referência deste faturamento (aparece no lugar do código/descrição do marco no documento)</label>
         <input type="text" id="standaloneRef" placeholder="ex.: Faturamento avulso — Maio/2026" value="${escapeHtml(billing.descricao||'')}">
@@ -1823,8 +1833,7 @@ function renderLinhasModal(billing, contract, client, opts) {
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" id="btnCloseLinhas2">Fechar</button>
-      <button class="btn btn-outline" id="btnGenProformaModal" ${!hasProforma ? 'disabled title="Cadastre o modelo de Proforma abaixo"' : ''}>${icon('sheet')}Gerar Proforma</button>
-      <button class="btn btn-primary" id="btnGenBmModal" ${!hasBm ? 'disabled title="Cadastre o modelo de BM abaixo"' : ''}>${icon('sheet')}Gerar BM</button>
+      <button class="btn btn-primary" id="btnSaveLinhas">${icon('check')}Salvar</button>
     </div>`);
 }
 /* ---------- inline contract edit form (Ficha tab) ---------- */
@@ -2089,17 +2098,7 @@ function wireContractDetailEvents(contract, tab) {
         render();
       });
     });
-    document.querySelectorAll('[data-release]').forEach(el => {
-      el.addEventListener('click', async () => {
-        const b = DB.billings.find(x => x.id === el.dataset.release);
-        if (!b) return;
-        b.releasedDate = todayISO();
-        await dbSave('billings');
-        toast('Faturamento liberado. Já pode gerar o BM e a Proforma.', 'ok');
-        render();
-      });
-    });
-    function openGenModal(billing, opts) {
+    function openEditModal(billing, opts) {
       opts = opts || {};
       const readLinhasFromModal = () => {
         const linhas = [];
@@ -2113,71 +2112,93 @@ function wireContractDetailEvents(contract, tab) {
         const el2 = document.getElementById('linhasModalMsg');
         if (el2) { el2.textContent = msg || ''; el2.style.color = isErr ? 'var(--danger)' : 'var(--success)'; el2.style.fontWeight = '700'; }
       };
-      const applyLinhas = async () => {
-        billing.linhas = readLinhasFromModal();
-        if (opts.standalone) {
-          const refEl = document.getElementById('standaloneRef');
-          billing.descricao = (refEl && refEl.value.trim()) || 'Faturamento avulso';
-          billing.valor = billing.linhas.reduce((sum, l) => {
-            const line = contractLinesForContract(contract.id).find(cl => cl.id === l.lineId);
-            return sum + (line ? (Number(line.precoUnitario) || 0) * (Number(l.quantidade) || 0) : 0);
-          }, 0);
-          if (!opts.created) {
-            DB.billings.push(billing);
-            opts.created = true;
-          }
-        }
-        await dbSave('billings');
-      };
 
       renderLinhasModal(billing, contract, client, opts);
-      document.getElementById('btnCloseLinhas').addEventListener('click', () => { render(); closeModal(); });
-      document.getElementById('btnCloseLinhas2').addEventListener('click', () => { render(); closeModal(); });
-      document.getElementById('btnGenBmModal').addEventListener('click', async (e) => {
+      document.getElementById('btnCloseLinhas').addEventListener('click', closeModal);
+      document.getElementById('btnCloseLinhas2').addEventListener('click', closeModal);
+      document.getElementById('btnSaveLinhas').addEventListener('click', async (e) => {
         const btn = e.currentTarget;
-        btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> Gerando…`;
+        btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> Salvando…`;
         try {
-          await applyLinhas();
-          if (!billing.linhas.length) throw new Error('Selecione ao menos um item com quantidade maior que zero antes de gerar.');
-          const fileName = await generateBmFile(client, contract, billing);
-          if (!billing.bmGeneratedDate) billing.bmGeneratedDate = todayISO();
+          billing.linhas = readLinhasFromModal();
+          if (opts.standalone) {
+            const refEl = document.getElementById('standaloneRef');
+            billing.descricao = (refEl && refEl.value.trim()) || 'Faturamento avulso';
+            billing.valor = billing.linhas.reduce((sum, l) => {
+              const line = contractLinesForContract(contract.id).find(cl => cl.id === l.lineId);
+              return sum + (line ? (Number(line.precoUnitario) || 0) * (Number(l.quantidade) || 0) : 0);
+            }, 0);
+            if (!opts.created) { DB.billings.push(billing); opts.created = true; }
+          }
           await dbSave('billings');
-          setModalMsg('BM gerado: ' + fileName, false);
-          toast('BM gerado: ' + fileName, 'ok');
+          toast('Faturamento salvo.', 'ok');
+          closeModal();
+          render();
         } catch (err) {
-          console.error('Erro ao gerar BM:', err);
-          setModalMsg(err.message || 'Erro ao gerar o BM.', true);
-          toast(err.message || 'Erro ao gerar o BM.', 'err');
+          console.error('Erro ao salvar:', err);
+          setModalMsg(err.message || 'Erro ao salvar.', true);
+          toast(err.message || 'Erro ao salvar.', 'err');
         } finally {
-          btn.disabled = false; btn.innerHTML = `${icon('sheet')}Gerar BM`;
-        }
-      });
-      document.getElementById('btnGenProformaModal').addEventListener('click', async (e) => {
-        const btn = e.currentTarget;
-        btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> Gerando…`;
-        try {
-          await applyLinhas();
-          if (!billing.linhas.length) throw new Error('Selecione ao menos um item com quantidade maior que zero antes de gerar.');
-          const fileName = await generateProformaFile(client, contract, billing);
-          if (!billing.proformaGeneratedDate) billing.proformaGeneratedDate = todayISO();
-          await dbSave('billings');
-          setModalMsg('Proforma gerada: ' + fileName, false);
-          toast('Proforma gerada: ' + fileName, 'ok');
-        } catch (err) {
-          console.error('Erro ao gerar Proforma:', err);
-          setModalMsg(err.message || 'Erro ao gerar a Proforma.', true);
-          toast(err.message || 'Erro ao gerar a Proforma.', 'err');
-        } finally {
-          btn.disabled = false; btn.innerHTML = `${icon('sheet')}Gerar Proforma`;
+          btn.disabled = false; btn.innerHTML = `${icon('check')}Salvar`;
         }
       });
     }
 
-    document.querySelectorAll('[data-open-gen]').forEach(el => {
+    document.querySelectorAll('[data-edit-billing]').forEach(el => {
       el.addEventListener('click', () => {
-        const b = DB.billings.find(x => x.id === el.dataset.openGen);
+        const b = DB.billings.find(x => x.id === el.dataset.editBilling);
         if (!b) return;
-        openGenModal(b, { standalone: false });
+        openEditModal(b, { standalone: false });
+      });
+    });
+
+    document.querySelectorAll('[data-gen-bm]').forEach(el => {
+      el.addEventListener('click', async () => {
+        const b = DB.billings.find(x => x.id === el.dataset.genBm);
+        if (!b) return;
+        el.disabled = true;
+        try {
+          const fileName = await generateBmFile(client, contract, b);
+          if (!b.bmGeneratedDate) b.bmGeneratedDate = todayISO();
+          await dbSave('billings');
+          toast('BM gerado: ' + fileName, 'ok');
+        } catch (err) {
+          console.error('Erro ao gerar BM:', err);
+          toast(err.message || 'Erro ao gerar o BM.', 'err');
+        } finally {
+          el.disabled = false;
+        }
+      });
+    });
+
+    document.querySelectorAll('[data-gen-proforma]').forEach(el => {
+      el.addEventListener('click', async () => {
+        const b = DB.billings.find(x => x.id === el.dataset.genProforma);
+        if (!b) return;
+        el.disabled = true;
+        try {
+          const fileName = await generateProformaFile(client, contract, b);
+          if (!b.proformaGeneratedDate) b.proformaGeneratedDate = todayISO();
+          await dbSave('billings');
+          toast('Proforma gerada: ' + fileName, 'ok');
+        } catch (err) {
+          console.error('Erro ao gerar Proforma:', err);
+          toast(err.message || 'Erro ao gerar a Proforma.', 'err');
+        } finally {
+          el.disabled = false;
+        }
+      });
+    });
+
+    document.querySelectorAll('[data-del-billing]').forEach(el => {
+      el.addEventListener('click', async () => {
+        const b = DB.billings.find(x => x.id === el.dataset.delBilling);
+        if (!b) return;
+        if (!confirm(`Excluir o marco "${b.codigo}"? Isso remove o registro de faturamento (datas, itens, status) do sistema — não pode ser desfeito.`)) return;
+        DB.billings = DB.billings.filter(x => x.id !== b.id);
+        await dbSave('billings');
+        toast('Marco excluído.', 'ok');
+        render();
       });
     });
 
@@ -2188,9 +2209,9 @@ function wireContractDetailEvents(contract, tab) {
         id: uid('bm'), contractId: contract.id, codigo: 'AVULSO-' + (avulsoCount + 1), descricao: '',
         gatilho: '', percentual: '', valor: 0, linhas: [], origin: 'avulso',
         releasedDate: todayISO(), bmGeneratedDate: '', proformaGeneratedDate: '',
-        bmSentDate: '', proformaSentDate: '', bmApprovedDate: '', nfSentDate: '', paymentDate: '',
+        bmSentDate: '', proformaSentDate: '', bmApprovedDate: '', proformaApprovedDate: '', nfSentDate: '', paymentDate: '',
       };
-      openGenModal(fakeBilling, { standalone: true });
+      openEditModal(fakeBilling, { standalone: true });
     });
 
     function wireTemplateUploadFor(kind, dropId, inputId, replaceId, urlField, pathField, nameField, storageFolder) {
@@ -2453,7 +2474,7 @@ async function applyAditivo() {
       id, contractId: contract.id, codigo: m.codigo || ('BM'+(billingsForContract(contract.id).length+1)),
       descricao: m.descricao || '', percentual: m.percentual || '', valor: Number(m.valor)||0,
       gatilho: m.gatilho || '', dataPrevisao: m.dataPrevisao || '', origin: log.id,
-      releasedDate: '', bmGeneratedDate: '', bmSentDate: '', proformaSentDate: '', proformaGeneratedDate: '', bmApprovedDate: '', nfSentDate: '', paymentDate: '', linhas: [],
+      releasedDate: '', bmGeneratedDate: '', bmSentDate: '', proformaSentDate: '', proformaGeneratedDate: '', bmApprovedDate: '', proformaApprovedDate: '', nfSentDate: '', paymentDate: '', linhas: [],
     });
     log.milestonesAdded.push(id);
   });
@@ -3386,7 +3407,7 @@ async function saveWizardContract() {
     DB.billings.push({
       id: uid('bm'), contractId, codigo: m.codigo, descricao: m.descricao, percentual: m.percentual,
       valor: m.valor, gatilho: m.gatilho, dataPrevisao: m.dataPrevisao, origin: 'original', linhas: [],
-      releasedDate: '', bmGeneratedDate: '', bmSentDate: '', proformaSentDate: '', proformaGeneratedDate: '', bmApprovedDate: '', nfSentDate: '', paymentDate: '',
+      releasedDate: '', bmGeneratedDate: '', bmSentDate: '', proformaSentDate: '', proformaGeneratedDate: '', bmApprovedDate: '', proformaApprovedDate: '', nfSentDate: '', paymentDate: '',
     });
   });
   await dbSave('billings');

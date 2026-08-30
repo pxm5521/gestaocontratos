@@ -134,6 +134,12 @@ Valores (preço unitário, quantidade, valor do marco, valor total) agora são e
 
 Todos os campos de data do site (Ficha do contrato, aba de faturamento, cadastro de contrato, aditivos) agora usam um campo de texto com máscara **dd/mm/aaaa**, digitado manualmente — em vez do seletor nativo do navegador, que mostrava mm/dd/aaaa dependendo da configuração de idioma do computador de cada pessoa. Isso garante o mesmo formato brasileiro pra todo mundo, independente do navegador ou do Windows configurado.
 
+## Novo fluxo de Editar/Gerar/Excluir por marco
+
+A janela de itens/quantidades agora só tem **Salvar** e **Fechar** — ela não gera mais o Excel diretamente. Depois de salvar, o marco aparece na tabela "Status de cada marco" com quatro botões na coluna Ação: **Editar** (reabre a janela de itens), **Gerar BM**, **Gerar Proforma** (cada um baixa o Excel direto, usando os itens já salvos) e **Excluir** (remove o marco do sistema, com confirmação).
+
+A coluna "Liberação" foi removida (não é mais necessária nesse fluxo), e a coluna "Aprovado" virou duas colunas separadas: **BM Aprovado** e **Proforma Aprovada**.
+
 ## Perguntas comuns
 
 **A pessoa não recebeu o e-mail de convite.** Confira a caixa de spam. O remetente é algo como `noreply@SEU-PROJETO.firebaseapp.com` — pode demorar 1–2 minutos. Se quiser, use "Reenviar convite" na página de Administração.
