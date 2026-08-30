@@ -197,7 +197,8 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield}
 /* ---------- Table ---------- */
 .table-wrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)}
 table{width:100%;border-collapse:collapse;background:#fff;font-size:13px}
-.tbl-center-head thead th{text-align:center}
+.tbl-center-head th, .tbl-center-head td{text-align:center}
+.tbl-center-head td{vertical-align:top}
 th{
   background:var(--blue-pale);color:var(--navy-darker);text-align:left;font-size:11.5px;
   text-transform:uppercase;letter-spacing:.3px;padding:10px 12px;border-bottom:1px solid var(--border);
@@ -1781,7 +1782,7 @@ function renderFaturamentoTab(contract, client) {
       <td>${dateField('NF enviada', 'nfSentDate', b.nfSentDate)}</td>
       <td>${dateField('Pagamento', 'paymentDate', b.paymentDate)}</td>
       <td style="white-space:nowrap;min-width:160px">
-        <div style="display:grid;grid-template-columns:repeat(2,auto);gap:4px">
+        <div style="display:inline-grid;grid-template-columns:repeat(2,auto);gap:4px">
           <button class="btn btn-outline btn-sm" data-gen-bm="${b.id}" title="Gerar BM" ${!hasBmTemplate ? 'disabled' : ''}>${icon('sheet')}BM</button>
           <button class="btn btn-outline btn-sm" data-gen-proforma="${b.id}" title="Gerar Proforma" ${!hasProformaTemplate ? 'disabled' : ''}>${icon('sheet')}Prof.</button>
           <button class="btn btn-outline btn-sm" data-edit-billing="${b.id}" title="Editar marco, itens e quantidades">${icon('edit')}</button>
