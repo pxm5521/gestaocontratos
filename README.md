@@ -140,6 +140,12 @@ A janela de itens/quantidades agora só tem **Salvar** e **Fechar** — ela não
 
 A coluna "Liberação" foi removida (não é mais necessária nesse fluxo), e a coluna "Aprovado" virou duas colunas separadas: **BM Aprovado** e **Proforma Aprovada**.
 
+## Clientes editáveis, setor, ponto focal e gerente responsável
+
+- Na página de um cliente agora tem um botão **Editar** — dá pra alterar razão social, **Setor** (ex.: Cabos Submarinos) e o ponto focal (nome/e-mail/telefone).
+- Na Ficha do contrato, o campo **Ponto focal do cliente** (nome/e-mail/telefone) atualiza automaticamente o cadastro do cliente ao salvar.
+- Também foi adicionado o campo **Gerente OceanPact responsável**, com busca (digite pra filtrar) e um botão de limpar — a lista vem de um cadastro novo, a aba **Gerentes OceanPact** no menu lateral, onde você cadastra nome, e-mail, telefone e a empresa do grupo de cada gerente.
+
 ## Perguntas comuns
 
 **A pessoa não recebeu o e-mail de convite.** Confira a caixa de spam. O remetente é algo como `noreply@SEU-PROJETO.firebaseapp.com` — pode demorar 1–2 minutos. Se quiser, use "Reenviar convite" na página de Administração.
