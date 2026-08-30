@@ -183,12 +183,12 @@ input[type=number]::-webkit-inner-spin-button,
 input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 input[type=number]{-moz-appearance:textfield;appearance:textfield}
 /* campo de data em texto (dd/mm/aaaa) + botão de calendário ao lado */
-.date-wrap{display:inline-flex;align-items:center;gap:4px;position:relative;max-width:100%}
-.date-wrap .date-br{flex:1;min-width:0}
+.date-wrap{display:inline-flex;flex-direction:column;align-items:flex-start;gap:2px;position:relative;max-width:100%}
+.date-wrap .date-br{width:100%;min-width:0}
 .date-native-helper{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none;left:0;top:0;border:none;padding:0}
-.date-cal-btn{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--blue);cursor:pointer}
+.date-cal-btn{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:22px;height:20px;padding:0;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--blue);cursor:pointer}
 .date-cal-btn:hover{background:var(--blue-pale);border-color:var(--blue-light)}
-.date-cal-btn svg{width:15px;height:15px}
+.date-cal-btn svg{width:12px;height:12px}
 .field-row{display:flex;gap:12px}
 .field-row > .field{flex:1}
 .help{font-size:11.5px;color:var(--text-muted);margin-top:4px}
@@ -1691,7 +1691,10 @@ function renderMarcosTab(contract) {
       <td style="width:40px"><button class="icon-btn" data-del-line="${l.id}" title="Remover item">${icon('trash')}</button></td>
     </tr>`).join('');
 
-  const bs = billingsForContract(contract.id);
+  // Só os marcos "de verdade" do contrato (Anexo B) — faturamentos avulsos não entram aqui,
+  // essa tabela é só espelho/consulta do que está definido no contrato. Avulsos ficam
+  // visíveis (e editáveis) na aba "Gerenciar faturamento".
+  const bs = billingsForContract(contract.id).filter(b => b.origin !== 'avulso');
   const rows = bs.map(b => {
     const valor = Number(b.valor) || 0;
     const custoPrevisto = Number(b.custoPrevisto) || 0;
