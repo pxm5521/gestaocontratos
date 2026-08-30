@@ -1696,15 +1696,6 @@ function renderMarcosTab(contract) {
   // visíveis (e editáveis) na aba "Gerenciar faturamento".
   const bs = billingsForContract(contract.id).filter(b => b.origin !== 'avulso');
   const rows = bs.map(b => {
-    const valor = Number(b.valor) || 0;
-    const custoPrevisto = Number(b.custoPrevisto) || 0;
-    const custoRealizado = Number(b.custoRealizado) || 0;
-    const margem = (custo) => {
-      if (!valor) return '—';
-      const m = valor - custo;
-      const p = (m / valor * 100).toFixed(1);
-      return `<span style="color:${m<0?'var(--danger)':'var(--success)'}">${formatCurrency(m, contract.moeda)}<div class="muted" style="font-size:11px">${p}%</div></span>`;
-    };
     return `
     <tr>
       <td style="width:70px"><input type="text" value="${escapeHtml(b.codigo)}" data-mfield="codigo" data-mid="${b.id}" style="width:64px"></td>
@@ -1713,10 +1704,6 @@ function renderMarcosTab(contract) {
       <td style="width:130px"><input type="number" step="0.01" value="${b.valor||''}" data-mfield="valor" data-mid="${b.id}"></td>
       <td style="min-width:220px"><textarea rows="2" data-mfield="gatilho" data-mid="${b.id}">${escapeHtml(b.gatilho||'')}</textarea></td>
       <td style="width:110px"><input type="text" value="${escapeHtml(b.dataPrevisao||'')}" data-mfield="dataPrevisao" data-mid="${b.id}" placeholder="ex: TBC"></td>
-      <td style="width:150px">${custoCell(b, CUSTO_KINDS[0])}</td>
-      <td style="width:110px">${margem(custoPrevisto)}</td>
-      <td style="width:150px">${custoCell(b, CUSTO_KINDS[1])}</td>
-      <td style="width:110px">${margem(custoRealizado)}</td>
       <td style="width:40px"><button class="icon-btn" data-del-milestone="${b.id}" title="Remover marco">${icon('trash')}</button></td>
     </tr>`;
   }).join('');
@@ -1735,14 +1722,6 @@ function renderMarcosTab(contract) {
         </table>
       </div>
     </div>
-    <div class="card card-pad" style="margin-bottom:16px;background:var(--blue-pale);border:none">
-      <div style="display:flex;gap:10px;align-items:flex-start">
-        ${icon('info')}
-        <div style="font-size:12.5px">
-          <strong>Custo e margem são só para controle interno.</strong> Esses campos e as planilhas anexadas aqui <u>nunca</u> aparecem no BM/Proforma gerados para o cliente. Custo previsto é o orçado; custo realizado é o apurado depois da execução — a margem de cada um é calculada separadamente.
-        </div>
-      </div>
-    </div>
     <div class="card card-pad">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div class="section-title">Marcos de faturamento (Anexo B)</div>
@@ -1751,8 +1730,8 @@ function renderMarcosTab(contract) {
       <p class="help">Edite diretamente as células. As alterações são salvas automaticamente. O campo <strong>gatilho</strong> deve descrever objetivamente o que libera o faturamento. Para escolher quais itens de preço entram em cada marco, use o botão "Linhas" na aba Gerenciar faturamento.</p>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Marco</th><th>Descrição</th><th>%</th><th>Valor cobrado (R$)</th><th>O que libera o faturamento</th><th>Data prevista</th><th>Custo previsto</th><th>Margem prevista</th><th>Custo realizado</th><th>Margem realizada</th><th></th></tr></thead>
-          <tbody>${rows || `<tr><td colspan="11" class="tbl-empty">Nenhum marco cadastrado.</td></tr>`}</tbody>
+          <thead><tr><th>Marco</th><th>Descrição</th><th>%</th><th>Valor cobrado (R$)</th><th>O que libera o faturamento</th><th>Data prevista</th><th></th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="7" class="tbl-empty">Nenhum marco cadastrado.</td></tr>`}</tbody>
         </table>
       </div>
     </div>`;
