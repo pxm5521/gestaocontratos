@@ -587,6 +587,24 @@ function isoToBr(iso) {
   if (!m) return '';
   return `${m[3]}/${m[2]}/${m[1]}`;
 }
+function addMonthsISO(iso, months) {
+  if (!iso) return '';
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return '';
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().slice(0, 10);
+}
+// Verifica se o reajuste (data em contract.proximoReajuste) já venceu sem nenhum
+// aditivo marcado explicitamente como "reajuste de preços" registrado depois disso.
+function reajusteAtrasado(contract) {
+  if (!contract.proximoReajuste) return false;
+  const today = todayISO();
+  if (contract.proximoReajuste > today) return false;
+  const buffer = addMonthsISO(contract.proximoReajuste, -3); // até 3 meses antes do vencimento já conta
+  const found = (contract.aditivos || []).some(a => a.ehReajuste && a.appliedAt && a.appliedAt.slice(0, 10) >= buffer);
+  return !found;
+}
 function dateBrAttrs(iso, extraAttrs, extraClass) {
   const cls = 'date-br' + (extraClass ? ' ' + extraClass : '');
   return `type="text" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" class="${cls}" value="${escapeHtml(isoToBr(iso))}" ${extraAttrs || ''}`;
@@ -672,6 +690,16 @@ function getContract(id) { return DB.contracts.find(c => c.id === id); }
 function contractsForClient(cnpj) { return DB.contracts.filter(c => c.clientCnpj === cnpj); }
 function billingsForContract(id) { return DB.billings.filter(b => b.contractId === id).sort((a,b)=> (a.codigo||'').localeCompare(b.codigo||'', undefined, { numeric: true, sensitivity: 'base' })); }
 function contractLinesForContract(id) { return DB.contractLines.filter(l => l.contractId === id).sort((a,b)=> (a.codigo||'').localeCompare(b.codigo||'', undefined, { numeric: true, sensitivity: 'base' })); }
+function lineVersao(l) { return l.versao || 'Original'; }
+function contractLineVersions(id) {
+  const set = new Set(contractLinesForContract(id).map(lineVersao));
+  set.add('Original');
+  return Array.from(set).sort((a, b) => a === 'Original' ? -1 : b === 'Original' ? 1 : a.localeCompare(b, 'pt-BR'));
+}
+function activeContractLines(contract) {
+  const versao = contract.tabelaAtivaVersao || 'Original';
+  return contractLinesForContract(contract.id).filter(l => lineVersao(l) === versao);
+}
 
 /* ---------- toast ---------- */
 function toast(msg, kind) {
@@ -1680,6 +1708,8 @@ function bindGoto() {
 let ficheEditMode = false;
 let clientEditMode = false;
 let clientEditModeFor = null;
+let viewedTabelaVersao = null;
+let viewedTabelaVersaoFor = null;
 
 function renderContractDetail(id, tab) {
   tab = tab || 'ficha';
@@ -1750,6 +1780,7 @@ function renderFichaView(contract, client) {
       <div class="grid grid-2">
         <dl class="kv">
           <dt>Ponto focal do cliente</dt><dd>${(() => { const ct = client && (client.contatos||[]).find(c => c.id === contract.pontoFocalId); return ct ? escapeHtml(ct.nome||'') + (ct.email ? ' · '+escapeHtml(ct.email):'') + (ct.telefone ? ' · '+escapeHtml(ct.telefone):'') : '—'; })()}</dd>
+          <dt>Próximo reajuste</dt><dd>${contract.proximoReajuste ? `<span style="${reajusteAtrasado(contract) ? 'color:var(--danger);font-weight:700' : ''}">${formatDate(contract.proximoReajuste)}${reajusteAtrasado(contract) ? ' — vencido, sem aditivo' : ''}</span>` : '—'}</dd>
         </dl>
         <dl class="kv">
           <dt>Gerente OceanPact responsável</dt><dd>${(() => { const m = DB.managers.find(x => x.id === contract.gerenteId); return m ? escapeHtml(managerLabel(m)) : '—'; })()}</dd>
@@ -1791,7 +1822,13 @@ function custoCell(b, kind) {
 }
 
 function renderMarcosTab(contract) {
-  const lines = contractLinesForContract(contract.id);
+  if (viewedTabelaVersaoFor !== contract.id) {
+    viewedTabelaVersao = contract.tabelaAtivaVersao || 'Original';
+    viewedTabelaVersaoFor = contract.id;
+  }
+  const versoes = contractLineVersions(contract.id);
+  const ativa = contract.tabelaAtivaVersao || 'Original';
+  const lines = contractLinesForContract(contract.id).filter(l => lineVersao(l) === viewedTabelaVersao);
   const lineRows = lines.map(l => `
     <tr>
       <td style="width:70px"><input type="text" value="${escapeHtml(l.codigo||'')}" data-lfield="codigo" data-lid="${l.id}" style="width:60px"></td>
@@ -1821,11 +1858,21 @@ function renderMarcosTab(contract) {
 
   return `
     <div class="card card-pad" style="margin-bottom:18px">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div class="section-title">Itens de preço do contrato</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div class="section-title" style="margin-bottom:0">Itens de preço do contrato</div>
         <button class="btn btn-outline btn-sm" id="btnAddLine">${icon('plus')}Novo item</button>
       </div>
-      <p class="help">Catálogo dos itens/linhas do contrato (igual ao Anexo E de preços). Cada marco de faturamento pode incluir uma ou mais dessas linhas com a quantidade lançada naquela rodada — use isso quando um BM cobrir mais de uma linha de medição.</p>
+      <div style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;margin:10px 0">
+        <div class="field" style="margin-bottom:0;min-width:220px">
+          <label>Tabela de preços (versão)</label>
+          <select id="tabelaVersaoSelect">
+            ${versoes.map(v => `<option value="${escapeHtml(v)}" ${v === viewedTabelaVersao ? 'selected' : ''}>${escapeHtml(v)}${v === ativa ? ' (em uso)' : ''}</option>`).join('')}
+          </select>
+        </div>
+        ${viewedTabelaVersao !== ativa ? `<button class="btn btn-primary btn-sm" id="btnUsarVersao">${icon('check')}Usar esta versão</button>` : `<span class="badge st-liberado" style="height:34px;display:inline-flex;align-items:center"><span class="dot"></span>Versão em uso para gerar BM/Proforma</span>`}
+        <button class="btn btn-outline btn-sm" id="btnDuplicarVersao">${icon('sheet')}Duplicar para nova versão</button>
+      </div>
+      <p class="help">Catálogo dos itens/linhas do contrato (igual ao Anexo E de preços). Cada marco de faturamento pode incluir uma ou mais dessas linhas com a quantidade lançada naquela rodada — use isso quando um BM cobrir mais de uma linha de medição. Só a versão marcada "em uso" é usada para gerar BM/Proforma; as outras ficam guardadas para consulta (ex.: antes/depois de um reajuste).</p>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Item</th><th>Descrição</th><th>Unidade</th><th>Preço unitário (R$)</th><th>Qtd. contratada</th><th></th></tr></thead>
@@ -1934,9 +1981,10 @@ function renderFaturamentoTab(contract, client) {
 
 function renderLinhasModal(billing, contract, client, opts) {
   opts = opts || {};
-  const lines = contractLinesForContract(contract.id);
+  const lines = activeContractLines(contract);
   const current = {};
   (billing.linhas || []).forEach(l => current[l.lineId] = l.quantidade);
+  const versaoAtiva = contract.tabelaAtivaVersao || 'Original';
 
   const rows = lines.map(l => `
     <tr>
@@ -1961,7 +2009,7 @@ function renderLinhasModal(billing, contract, client, opts) {
     <div class="modal-head"><h3>${title}</h3><button class="icon-btn" id="btnCloseLinhas">${icon('x')}</button></div>
     <div class="modal-body">
       ${refField}
-      <p class="help" style="margin-top:0">Escolha quais itens de preço entram ${opts.standalone ? 'neste faturamento' : 'nesta rodada de faturamento'} e a quantidade de cada um. Itens com quantidade 0 ou em branco não aparecem no documento gerado.</p>
+      <p class="help" style="margin-top:0">Escolha quais itens de preço entram ${opts.standalone ? 'neste faturamento' : 'nesta rodada de faturamento'} e a quantidade de cada um. Itens com quantidade 0 ou em branco não aparecem no documento gerado. <span class="muted">(Tabela de preços em uso: <strong>${escapeHtml(versaoAtiva)}</strong>)</span></p>
       ${lines.length ? `<div class="table-wrap"><table><thead><tr><th>Item</th><th>Descrição</th><th>Unidade</th><th>Preço unit.</th><th>Qtd.</th></tr></thead><tbody>${rows}</tbody></table></div>`
         : `<div class="tbl-empty">Nenhum item de preço cadastrado ainda. Adicione itens na aba "Marcos de faturamento".</div>`}
       <div id="linhasModalMsg" class="help" style="margin-top:12px"></div>
@@ -2002,6 +2050,11 @@ function renderContractFormInline(contract, client) {
         </select>
       </div>
       <div class="field"><label>Gerente OceanPact responsável</label>${managerPickerHTML(contract.gerenteId, 'gerenteInputFicha')}</div>
+      <div class="field-row" style="align-items:flex-end">
+        <div class="field"><label>Próximo reajuste</label><input ${dateBrAttrs(contract.proximoReajuste, 'name="proximoReajuste" id="proximoReajusteInput"')}></div>
+        <div class="field" style="flex:0"><button type="button" class="btn btn-outline btn-sm" id="btnSugerirReajuste" title="Sugerir data assinatura + 12 meses">${icon('bolt')}Sugerir (+12 meses)</button></div>
+      </div>
+      <p class="help" style="margin-top:-6px">Confira sempre a cláusula de reajuste do contrato — a sugestão é só um ponto de partida (data de assinatura + 12 meses).</p>
       <div class="field-row">
         <div class="field"><label>Moeda</label>
           <select name="moeda"><option ${contract.moeda==='BRL'?'selected':''}>BRL</option><option ${contract.moeda==='USD'?'selected':''}>USD</option><option ${contract.moeda==='OUTRO'?'selected':''}>OUTRO</option></select>
@@ -2104,6 +2157,13 @@ function wireContractDetailEvents(contract, tab) {
       });
     } else {
       document.getElementById('btnCancelEdit').addEventListener('click', () => { ficheEditMode = false; render(); });
+      const sugerirBtn = document.getElementById('btnSugerirReajuste');
+      if (sugerirBtn) sugerirBtn.addEventListener('click', () => {
+        const input = document.getElementById('proximoReajusteInput');
+        const sugestao = addMonthsISO(contract.dataAssinatura, 12);
+        if (!sugestao) { toast('Preencha a data de assinatura primeiro.', 'err'); return; }
+        input.value = isoToBr(sugestao);
+      });
       document.getElementById('fichaEditForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const fd = new FormData(e.target);
@@ -2114,6 +2174,7 @@ function wireContractDetailEvents(contract, tab) {
         updated.prazoPagamentoDias = Number(fd.get('prazoPagamentoDias')) || 30;
         updated.unidadeNegocio = Array.from(document.querySelectorAll('.ub-check:checked')).map(el => el.value);
         updated.pontoFocalId = fd.get('pontoFocalId') || '';
+        updated.proximoReajuste = brToIso(fd.get('proximoReajuste'));
         const gerenteInput = document.getElementById('gerenteInputFicha');
         updated.gerenteId = gerenteInput ? resolveManagerFromInput(gerenteInput) : (contract.gerenteId || '');
         Object.assign(contract, updated);
@@ -2221,12 +2282,46 @@ function wireContractDetailEvents(contract, tab) {
     });
     const addLineBtn = document.getElementById('btnAddLine');
     if (addLineBtn) addLineBtn.addEventListener('click', async () => {
-      const lines = contractLinesForContract(contract.id);
+      const lines = contractLinesForContract(contract.id).filter(l => lineVersao(l) === viewedTabelaVersao);
       DB.contractLines.push({
         id: uid('ln'), contractId: contract.id, codigo: String(lines.length + 1),
-        descricao: '', unidade: '', precoUnitario: 0, quantidadeContratada: '',
+        descricao: '', unidade: '', precoUnitario: 0, quantidadeContratada: '', versao: viewedTabelaVersao,
       });
       await dbSave('contractLines');
+      render();
+    });
+
+    const versaoSelect = document.getElementById('tabelaVersaoSelect');
+    if (versaoSelect) versaoSelect.addEventListener('change', () => {
+      viewedTabelaVersao = versaoSelect.value;
+      render();
+    });
+    const usarVersaoBtn = document.getElementById('btnUsarVersao');
+    if (usarVersaoBtn) usarVersaoBtn.addEventListener('click', async () => {
+      if (!confirm(`Usar a versão "${viewedTabelaVersao}" para gerar BM/Proforma daqui pra frente?`)) return;
+      contract.tabelaAtivaVersao = viewedTabelaVersao;
+      await dbSave('contracts');
+      toast('Tabela de preços em uso atualizada.', 'ok');
+      render();
+    });
+    const duplicarBtn = document.getElementById('btnDuplicarVersao');
+    if (duplicarBtn) duplicarBtn.addEventListener('click', async () => {
+      const linesInView = contractLinesForContract(contract.id).filter(l => lineVersao(l) === viewedTabelaVersao);
+      if (!linesInView.length) { toast('Essa versão está vazia — nada para copiar.', 'err'); return; }
+      const nomeSugerido = prompt('Nome da nova versão da tabela de preços:', 'Reajuste ' + formatDate(todayISO()));
+      if (!nomeSugerido) return;
+      const existentes = contractLineVersions(contract.id);
+      if (existentes.includes(nomeSugerido)) { toast('Já existe uma versão com esse nome.', 'err'); return; }
+      linesInView.forEach(l => {
+        DB.contractLines.push({
+          id: uid('ln'), contractId: contract.id, codigo: l.codigo, descricao: l.descricao,
+          unidade: l.unidade, precoUnitario: l.precoUnitario, quantidadeContratada: l.quantidadeContratada || '',
+          versao: nomeSugerido,
+        });
+      });
+      await dbSave('contractLines');
+      viewedTabelaVersao = nomeSugerido;
+      toast('Nova versão "' + nomeSugerido + '" criada. Ajuste os preços e clique em "Usar esta versão" quando quiser ativá-la.', 'ok');
       render();
     });
   }
@@ -2529,6 +2624,13 @@ function aditivoStep3Html() {
 
       ${!aditivoState.alteracoes.length && !aditivoState.marcosNovos.length && !aditivoState.marcosAlterados.length
         ? `<div class="help">A IA não identificou alterações estruturadas neste PDF. Verifique se é mesmo um aditivo, ou registre as mudanças manualmente na Ficha/Marcos do contrato.</div>` : ''}
+
+      <div class="card card-pad" style="background:#fffaf0;border:1px solid #f0d68a;margin-top:16px">
+        <label class="checkbox-row" style="align-items:flex-start">
+          <input type="checkbox" id="chkEhReajuste">
+          <span><strong>Este aditivo aplica reajuste de preços?</strong><br><span class="help" style="margin:2px 0 0">Marque isso se o aditivo reajusta os valores do contrato — o site usa essa marcação (não mais uma suposição da IA) pra saber se o reajuste previsto na Ficha foi de fato aplicado, e vai oferecer criar uma nova versão da tabela de preços com os valores reajustados.</span></span>
+        </label>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" id="btnCancelAditivo">Cancelar</button>
@@ -2646,6 +2748,9 @@ async function applyAditivo() {
     billing[m.campo] = newVal;
   });
 
+  const chkReajuste = document.getElementById('chkEhReajuste');
+  log.ehReajuste = !!(chkReajuste && chkReajuste.checked);
+
   contract.aditivos = contract.aditivos || [];
   contract.aditivos.push(log);
 
@@ -2654,7 +2759,41 @@ async function applyAditivo() {
   closeModal();
   toast('Aditivo registrado e alterações aplicadas.', 'ok');
   ficheEditMode = false;
+
+  if (log.ehReajuste) {
+    const criarNova = confirm('Esse aditivo foi marcado como reajuste de preços. Deseja criar uma nova versão da tabela de preços (copiando os itens atuais) para você ajustar com os valores reajustados? A versão anterior continua guardada para consulta.');
+    if (criarNova) {
+      const novaVersao = await duplicarTabelaPrecos(contract, 'Reajuste ' + formatDate(todayISO()));
+      if (novaVersao) {
+        toast('Nova versão da tabela de preços criada e ativada: "' + novaVersao + '". Ajuste os preços na aba Marcos de faturamento.', 'ok');
+        location.hash = `#/contrato/${contract.id}/marcos`;
+        return;
+      }
+    }
+  }
   render();
+}
+
+// Copia todos os itens da versão ATIVA da tabela de preços para uma nova versão
+// (com sufixo numérico se o nome já existir), e já ativa essa nova versão no contrato.
+async function duplicarTabelaPrecos(contract, nomeSugerido) {
+  const origem = activeContractLines(contract);
+  if (!origem.length) { toast('A tabela de preços atual está vazia — nada para copiar.', 'err'); return null; }
+  const existentes = contractLineVersions(contract.id);
+  let nome = nomeSugerido;
+  let n = 2;
+  while (existentes.includes(nome)) { nome = nomeSugerido + ' (' + n + ')'; n++; }
+  origem.forEach(l => {
+    DB.contractLines.push({
+      id: uid('ln'), contractId: contract.id, codigo: l.codigo, descricao: l.descricao,
+      unidade: l.unidade, precoUnitario: l.precoUnitario, quantidadeContratada: l.quantidadeContratada || '',
+      versao: nome,
+    });
+  });
+  contract.tabelaAtivaVersao = nome;
+  await dbSave('contractLines');
+  await dbSave('contracts');
+  return nome;
 }
 
 /* ---------- history timeline (shown in Ficha tab) ---------- */
@@ -2915,7 +3054,7 @@ function fichaTwoColRow(l1, v1, l2, v2) {
 
 async function generateFichaDocx(client, contract) {
   const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, HeadingLevel } = docx;
-  const lines = contractLinesForContract(contract.id);
+  const lines = activeContractLines(contract);
   const billings = billingsForContract(contract.id);
   const ubs = (contract.unidadeNegocio || []).join(', ') || '—';
 
@@ -2924,6 +3063,7 @@ async function generateFichaDocx(client, contract) {
     fichaLabelRow('Cliente', (client ? client.nome : '—') + (client ? ' — CNPJ ' + formatCNPJ(client.cnpj) : '') + (client && client.setor ? ' — Setor: ' + client.setor : '')),
     fichaLabelRow('Ponto focal do cliente', (() => { const ct = client && (client.contatos||[]).find(c => c.id === contract.pontoFocalId); return ct ? (ct.nome||'') + (ct.email ? ' — '+ct.email:'') + (ct.telefone ? ' — '+ct.telefone:'') : '—'; })()),
     fichaLabelRow('Gerente OceanPact responsável', (() => { const m = DB.managers.find(x => x.id === contract.gerenteId); return m ? managerLabel(m) : '—'; })()),
+    fichaLabelRow('Próximo reajuste', contract.proximoReajuste ? formatDate(contract.proximoReajuste) + (reajusteAtrasado(contract) ? ' (vencido, sem aditivo registrado)' : '') : '—'),
     fichaLabelRow('Empresa OceanPact (contratada)', (contract.fornecedorNome || '—') + (contract.fornecedorCnpj ? ' — CNPJ ' + formatCNPJ(contract.fornecedorCnpj) : '')),
     fichaTwoColRow('Nº Contrato', contract.numero || '—', 'Proposta', contract.propostaRef || '—'),
     fichaTwoColRow('Data assinatura', formatDate(contract.dataAssinatura), 'Início / Término', formatDate(contract.dataInicio) + ' — ' + (contract.dataTermino ? formatDate(contract.dataTermino) : 'em aberto')),
@@ -2963,7 +3103,7 @@ async function generateFichaDocx(client, contract) {
       fichaCell(l.precoUnitario ? Number(l.precoUnitario).toLocaleString('pt-BR', {minimumFractionDigits:2}) : '—', { width: 25, center: true }),
       fichaCell(l.quantidadeContratada ? String(l.quantidadeContratada) : '—', { width: 15, center: true }),
     ]}));
-    children.push(new Paragraph({ children: [new TextRun({ text: 'Planilha de Preços', bold: true, color: FICHA_NAVY, size: 24 })], spacing: { after: 120 } }));
+    children.push(new Paragraph({ children: [new TextRun({ text: 'Planilha de Preços — versão "' + (contract.tabelaAtivaVersao || 'Original') + '"', bold: true, color: FICHA_NAVY, size: 24 })], spacing: { after: 120 } }));
     children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, borders: fichaBorders(), rows: [priceHeader, ...priceRows] }));
     children.push(new Paragraph({ text: '', spacing: { after: 200 } }));
   }
@@ -3660,7 +3800,7 @@ async function saveWizardContract() {
   d.itensPreco.forEach(it => {
     DB.contractLines.push({
       id: uid('ln'), contractId, codigo: it.codigo, descricao: it.descricao,
-      unidade: it.unidade, precoUnitario: it.precoUnitario, quantidadeContratada: it.quantidade || '',
+      unidade: it.unidade, precoUnitario: it.precoUnitario, quantidadeContratada: it.quantidade || '', versao: 'Original',
     });
   });
   await dbSave('contractLines');

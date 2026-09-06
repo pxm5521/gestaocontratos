@@ -146,6 +146,18 @@ A coluna "Liberação" foi removida (não é mais necessária nesse fluxo), e a 
 - Na Ficha do contrato, o campo **Ponto focal** é uma lista dos contatos já cadastrados no cliente — cada contrato escolhe qual usar, sem duplicar cadastro. Pra adicionar um contato novo, é na página do cliente mesmo (tem um link direto ali na Ficha).
 - Também foi adicionado o campo **Gerente OceanPact responsável**, com busca (digite pra filtrar) e um botão de limpar — a lista vem de um cadastro novo, a aba **Gerentes OceanPact** no menu lateral, onde você cadastra nome, e-mail, telefone e a empresa do grupo de cada gerente.
 
+## Próximo reajuste de preços
+
+Novo campo na Ficha do contrato: **Próximo reajuste**. Tem um botão "Sugerir (+12 meses)" que calcula automaticamente data de assinatura + 12 meses — mas sempre confira contra a cláusula de reajuste do contrato antes de aceitar a sugestão, já que o cálculo é só um ponto de partida.
+
+A data aparece em **vermelho** quando já venceu (é anterior a hoje) e não existe nenhum aditivo do tipo "Valor" (ou cujo resumo mencione "reajuste") registrado nos ~3 meses antes do vencimento até agora — um sinal de que o reajuste pode não ter sido aplicado.
+
+## Aditivo marcado como reajuste + versões da tabela de preços
+
+Na hora de registrar um aditivo, agora tem um checkbox explícito: "Este aditivo aplica reajuste de preços?". É essa marcação (não mais uma suposição da IA) que o site usa para saber se o reajuste previsto na Ficha foi de fato aplicado.
+
+Se você marcar isso, o site oferece criar uma **nova versão da tabela de preços** — uma cópia da tabela atual, pronta para você editar com os valores reajustados. A tabela antiga fica guardada (não é apagada), e na aba "Marcos de faturamento" tem um seletor para ver qualquer versão e um botão "Usar esta versão" — só a versão marcada como "em uso" é a que entra nos BMs/Proformas gerados a partir dali. Marcos já faturados antes da mudança continuam usando os preços da versão que estava em uso na época (o histórico não muda).
+
 ## Perguntas comuns
 
 **A pessoa não recebeu o e-mail de convite.** Confira a caixa de spam. O remetente é algo como `noreply@SEU-PROJETO.firebaseapp.com` — pode demorar 1–2 minutos. Se quiser, use "Reenviar convite" na página de Administração.
