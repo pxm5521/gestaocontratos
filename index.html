@@ -1874,7 +1874,7 @@ function renderMarcosTab(contract) {
           </select>
         </div>
         ${viewedTabelaVersao !== ativa ? `<button class="btn btn-primary btn-sm" id="btnUsarVersao">${icon('check')}Usar esta versão</button>` : `<span class="badge st-liberado" style="height:34px;display:inline-flex;align-items:center"><span class="dot"></span>Versão em uso para gerar BM/Proforma</span>`}
-        <button class="btn btn-outline btn-sm" id="btnDuplicarVersao">${icon('sheet')}Duplicar para nova versão</button>
+        <button class="btn btn-outline btn-sm" id="btnDuplicarVersao">${icon('sheet')}Insira manualmente o reajuste</button>
       </div>
       <p class="help">Catálogo dos itens/linhas do contrato (igual ao Anexo E de preços). Cada marco de faturamento pode incluir uma ou mais dessas linhas com a quantidade lançada naquela rodada — use isso quando um BM cobrir mais de uma linha de medição. Só a versão marcada "em uso" é usada para gerar BM/Proforma; as outras ficam guardadas para consulta (ex.: antes/depois de um reajuste).</p>
       <div class="table-wrap">
