@@ -160,6 +160,20 @@ Antes de mostrar essa tela, o site já tenta ler o próprio PDF do aditivo em bu
 
 A tabela antiga fica guardada (não é apagada), e na aba "Marcos de faturamento" tem um seletor para ver qualquer versão e um botão "Usar esta versão" — só a versão marcada como "em uso" é a que entra nos BMs/Proformas gerados a partir dali. Marcos já faturados antes da mudança continuam usando os preços da versão que estava em uso na época (o histórico não muda).
 
+## Categorias por empresa, provisionamento contábil e Painel geral
+
+**Categorias por empresa** — nova aba "Categorias OceanPact" no menu: cada empresa do grupo (OceanPact Geociências, OceanPact Response, etc.) tem sua própria lista de categorias/tipos de serviço, editável (adicionar/remover). Na Ficha do contrato, ao escolher a empresa contratada, só as categorias dela aparecem pra marcar — já vem com OceanPact Geociências (Oceanografia/Geotecnia/Geofísica/Monitoramento Ambiental) e OceanPact Response (Projetos/Treinamentos/Simulados/Consultoria/Emergência/Dedicado) pré-cadastradas na primeira vez que o site carrega.
+
+**Provisionamento contábil** — cada marco agora tem, na janela de Editar: "Necessita provisão?", "Mês que deveria ser provisionado", "Provisionado? (confirmação contábil)" e "Mês em que foi provisionado". Um aviso "⚠ provisão pendente" aparece na tabela de status quando um marco precisa de provisão mas ainda não foi confirmado.
+
+**Painel (Dashboard) com visão geral** — agora mostra, olhando *todos* os contratos de uma vez: alertas de vigência (🔴 vencidos, 🟡 vencendo em até 30 dias, 🟢 vigentes), quantidade de faturamentos pendentes e quantos precisam de provisão. Corrigi também um bug que fazia alguns números do funil de faturamento não aparecerem depois de uma mudança anterior nos status.
+
+## Pendências de Faturamento (visão cross-contrato)
+
+Nova aba **Pendências** no menu — junta todos os marcos/faturamentos de todos os contratos que ainda não foram pagos numa lista só, com total em R$, quantidade, e quantos "esqueceram de provisionar". Clique numa linha pra abrir o contrato correspondente. O card "Faturamentos pendentes" do Painel também leva direto pra essa tela.
+
+Também foi adicionado um campo de **Observação** em cada marco (na janela de Editar) — pra anotações livres tipo "aguardando novo PC do cliente", que aparecem na lista de Pendências.
+
 ## Perguntas comuns
 
 **A pessoa não recebeu o e-mail de convite.** Confira a caixa de spam. O remetente é algo como `noreply@SEU-PROJETO.firebaseapp.com` — pode demorar 1–2 minutos. Se quiser, use "Reenviar convite" na página de Administração.

@@ -208,6 +208,8 @@ td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle
 tr:last-child td{border-bottom:none}
 tr.clickable{cursor:pointer}
 tr.clickable:hover td{background:var(--blue-pale)}
+.stat-card.clickable{cursor:pointer;transition:box-shadow .15s}
+.stat-card.clickable:hover{box-shadow:0 2px 10px rgba(0,0,0,.08)}
 .tbl-empty{padding:40px 20px;text-align:center;color:var(--text-muted)}
 
 /* ---------- Badges / status ---------- */
@@ -449,15 +451,15 @@ const PLACEHOLDER_TOKENS = [
 ];
 
 /* ---------- storage helpers (Firestore) ---------- */
-const DB = { clients: {}, contracts: [], billings: [], contractLines: [], managers: [], loaded: false };
+const DB = { clients: {}, contracts: [], billings: [], contractLines: [], managers: [], categoriaGrupos: [], loaded: false };
 let _unsubscribers = [];
 let _pendingRenders = 0;
 
 function startFirestoreSync(onFirstLoadDone) {
   const { db, fb } = window.__firebase;
-  let loadedFlags = { clients: false, contracts: false, billings: false, contractLines: false, managers: false };
+  let loadedFlags = { clients: false, contracts: false, billings: false, contractLines: false, managers: false, categoriaGrupos: false };
   function checkAllLoaded() {
-    if (loadedFlags.clients && loadedFlags.contracts && loadedFlags.billings && loadedFlags.contractLines && loadedFlags.managers && !DB.loaded) {
+    if (loadedFlags.clients && loadedFlags.contracts && loadedFlags.billings && loadedFlags.contractLines && loadedFlags.managers && loadedFlags.categoriaGrupos && !DB.loaded) {
       DB.loaded = true;
       if (onFirstLoadDone) onFirstLoadDone();
     }
@@ -499,13 +501,20 @@ function startFirestoreSync(onFirstLoadDone) {
     if (DB.loaded) render();
   }, (err) => { console.error('managers sync', err); toast('Erro ao sincronizar gerentes: ' + err.message, 'err'); });
 
-  _unsubscribers = [unsub1, unsub2, unsub3, unsub4, unsub5];
+  const unsub6 = fb.onSnapshot(fb.collection(db, 'categoriaGrupos'), (snap) => {
+    DB.categoriaGrupos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    loadedFlags.categoriaGrupos = true;
+    checkAllLoaded();
+    if (DB.loaded) render();
+  }, (err) => { console.error('categoriaGrupos sync', err); toast('Erro ao sincronizar categorias: ' + err.message, 'err'); });
+
+  _unsubscribers = [unsub1, unsub2, unsub3, unsub4, unsub5, unsub6];
 }
 
 function stopFirestoreSync() {
   _unsubscribers.forEach(u => { try { u(); } catch (e) {} });
   _unsubscribers = [];
-  DB.clients = {}; DB.contracts = []; DB.billings = []; DB.contractLines = []; DB.managers = []; DB.loaded = false;
+  DB.clients = {}; DB.contracts = []; DB.billings = []; DB.contractLines = []; DB.managers = []; DB.categoriaGrupos = []; DB.loaded = false;
 }
 
 function cleanForFirestore(obj) {
@@ -532,6 +541,7 @@ async function dbSave(part) {
     if (part === 'billings' || !part) await syncCollection('billings', DB.billings, b => b.id);
     if (part === 'contractLines' || !part) await syncCollection('contractLines', DB.contractLines, l => l.id);
     if (part === 'managers' || !part) await syncCollection('managers', DB.managers, m => m.id);
+    if (part === 'categoriaGrupos' || !part) await syncCollection('categoriaGrupos', DB.categoriaGrupos, c => c.id);
   } catch (e) {
     console.error('Erro ao salvar', e);
     toast('Falha ao salvar no banco de dados: ' + (e.message || e), 'err');
@@ -1321,9 +1331,11 @@ window.addEventListener('hashchange', render);
 
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'Painel', icon: 'dashboard' },
+  { key: 'pendencias', label: 'Pendências', icon: 'alert' },
   { key: 'clientes', label: 'Clientes', icon: 'building' },
   { key: 'contratos', label: 'Contratos', icon: 'file' },
   { key: 'gerentes', label: 'Gerentes OceanPact', icon: 'users' },
+  { key: 'categorias', label: 'Categorias OceanPact', icon: 'building' },
 ];
 
 function layout(innerHtml, opts) {
@@ -1411,29 +1423,47 @@ function contractTotals(contractId) {
 function clientContractsCount(cnpj) { return contractsForClient(cnpj).length; }
 
 /* ---------- DASHBOARD ---------- */
+function contractVigenciaStatus(contract) {
+  if (!contract.dataTermino) return 'aberto'; // sem data de término definida
+  const today = todayISO();
+  if (contract.dataTermino < today) return 'vencido';
+  if (daysBetween(today, contract.dataTermino) <= 30) return 'vencendo';
+  return 'vigente';
+}
+
 function renderDashboard() {
   const allBillings = DB.billings.map(b => ({ b, contract: getContract(b.contractId) })).filter(x => x.contract);
   const counts = {};
   STATUS_STEPS.forEach(s => counts[s.key] = 0);
-  let valorPendente = 0, valorPago = 0;
+  let valorPendente = 0, valorPago = 0, qtdPendente = 0;
   allBillings.forEach(({ b }) => {
     const st = computeStatus(b);
     counts[st]++;
     if (st === 'pago') valorPago += Number(b.valor) || 0;
-    else valorPendente += Number(b.valor) || 0;
+    else { valorPendente += Number(b.valor) || 0; qtdPendente++; }
+  });
+
+  const provisaoPendenteCount = allBillings.filter(({ b }) => b.necessitaProvisao === 'sim' && b.provisionado !== 'sim').length;
+
+  let vencidos = 0, vencendo = 0, vigentes = 0;
+  DB.contracts.forEach(c => {
+    const st = contractVigenciaStatus(c);
+    if (st === 'vencido') vencidos++;
+    else if (st === 'vencendo') vencendo++;
+    else vigentes++; // inclui "vigente" e "aberto" (sem data de término)
   });
 
   const kpis = [
     { label: 'Contratos ativos', value: DB.contracts.length, icon: 'file', color: 'var(--navy)', bg: 'var(--blue-pale)' },
     { label: 'Clientes', value: Object.keys(DB.clients).length, icon: 'building', color: 'var(--navy)', bg: 'var(--blue-pale)' },
-    { label: 'Aguardando ação', value: counts.pendente + counts.liberado + counts.bmgerado, icon: 'clock', color: 'var(--warning)', bg: 'var(--warning-bg)' },
-    { label: 'Em aprovação/cobrança', value: counts.bmenviado + counts.bmaprovado + counts.nfenviada, icon: 'bolt', color: 'var(--info)', bg: 'var(--info-bg)' },
+    { label: 'Faturamentos pendentes', value: qtdPendente, icon: 'clock', color: 'var(--warning)', bg: 'var(--warning-bg)', nav: 'pendencias' },
+    { label: 'Provisão pendente', value: provisaoPendenteCount, icon: 'alert', color: 'var(--warning)', bg: 'var(--warning-bg)' },
     { label: 'Valor a receber', value: formatCurrency(valorPendente, 'BRL'), icon: 'money', color: 'var(--navy)', bg: 'var(--blue-pale)', isText: true },
     { label: 'Valor recebido', value: formatCurrency(valorPago, 'BRL'), icon: 'check', color: 'var(--success)', bg: 'var(--success-bg)', isText: true },
   ];
 
   const kpiHtml = kpis.map(k => `
-    <div class="stat-card">
+    <div class="stat-card${k.nav ? ' clickable' : ''}" ${k.nav ? `data-nav="${k.nav}"` : ''}>
       <div class="stat-top">
         <div class="stat-label">${k.label}</div>
         <div class="stat-icon" style="background:${k.bg};color:${k.color}">${icon(k.icon)}</div>
@@ -1447,15 +1477,22 @@ function renderDashboard() {
       <span class="badge ${s.cls}" style="margin-top:4px"><span class="dot"></span>${s.label}</span>
     </div>`).join('<div style="width:1px;background:var(--border)"></div>');
 
+  const vigenciaHtml = `
+    <div style="display:flex;gap:24px;flex-wrap:wrap">
+      <div><span style="color:var(--danger);font-weight:800;font-size:18px">🔴 ${vencidos}</span> <span class="muted">contrato(s) vencido(s)</span></div>
+      <div><span style="color:var(--warning);font-weight:800;font-size:18px">🟡 ${vencendo}</span> <span class="muted">vencendo em até 30 dias</span></div>
+      <div><span style="color:var(--success);font-weight:800;font-size:18px">🟢 ${vigentes}</span> <span class="muted">vigente(s) / sem data de término</span></div>
+    </div>`;
+
   const rows = allBillings
     .sort((a, b) => {
-      const order = ['bmenviado','liberado','bmgerado','bmaprovado','pendente','nfenviada','pago'];
+      const order = ['enviado','pendente','aprovado','nfenviada','pago'];
       return order.indexOf(computeStatus(a.b)) - order.indexOf(computeStatus(b.b));
     })
     .map(({ b, contract }) => {
       const client = getClient(contract.clientCnpj);
       const st = computeStatus(b);
-      const lastDate = b.paymentDate || b.nfSentDate || b.bmApprovedDate || b.bmSentDate || b.bmGeneratedDate || b.releasedDate;
+      const lastDate = b.paymentDate || b.nfSentDate || b.bmApprovedDate || b.proformaApprovedDate || b.bmSentDate || b.proformaSentDate;
       const days = lastDate ? daysBetween(lastDate, todayISO()) : '—';
       return `
       <tr class="clickable" data-goto="contrato/${contract.id}/faturamento">
@@ -1471,6 +1508,10 @@ function renderDashboard() {
   const html = `
     <div class="grid grid-3" style="grid-template-columns:repeat(3,1fr);margin-bottom:18px">
       ${kpiHtml}
+    </div>
+    <div class="card card-pad" style="margin-bottom:18px">
+      <div class="section-title">Alertas de vigência de contratos</div>
+      ${vigenciaHtml}
     </div>
     <div class="card card-pad" style="margin-bottom:18px">
       <div class="section-title">Funil de faturamento</div>
@@ -1934,7 +1975,7 @@ function renderFaturamentoTab(contract, client) {
     <tr>
       <td><strong>${escapeHtml(b.codigo)}</strong><div class="muted" style="max-width:220px;font-size:11.5px">${escapeHtml((b.descricao||'').slice(0,70))}</div></td>
       <td class="mono">${formatCurrency(b.valor, contract.moeda)}<div class="muted" style="font-size:11.5px">${escapeHtml(b.percentual||'')}</div></td>
-      <td>${statusBadge(st)}</td>
+      <td>${statusBadge(st)}${(b.necessitaProvisao === 'sim' && b.provisionado !== 'sim') ? `<div class="muted" style="color:var(--warning);font-size:11px;margin-top:3px">⚠ provisão pendente</div>` : ''}</td>
       <td>${dateField('BM enviado', 'bmSentDate', b.bmSentDate)}</td>
       <td>${dateField('Proforma enviada', 'proformaSentDate', b.proformaSentDate)}</td>
       <td>${dateField('BM aprovado', 'bmApprovedDate', b.bmApprovedDate)}</td>
@@ -2009,10 +2050,29 @@ function renderLinhasModal(billing, contract, client, opts) {
         <div class="field"><label>Descrição</label><input type="text" id="marcoDescricaoEdit" value="${escapeHtml(billing.descricao||'')}"></div>
       </div>`;
 
+  const provisaoFields = `
+    <div class="card card-pad" style="background:var(--blue-pale);border:none;margin:14px 0">
+      <div class="section-title" style="margin-bottom:8px">Provisionamento contábil</div>
+      <div class="field-row">
+        <div class="field"><label>Necessita provisão?</label>
+          <select id="necessitaProvisaoEdit"><option value="">—</option><option value="sim" ${billing.necessitaProvisao === 'sim' ? 'selected' : ''}>Sim</option><option value="nao" ${billing.necessitaProvisao === 'nao' ? 'selected' : ''}>Não</option></select>
+        </div>
+        <div class="field"><label>Mês que deveria ser provisionado</label><input type="text" id="mesProvisaoEdit" placeholder="ex: Nov/2026" value="${escapeHtml(billing.mesProvisao||'')}"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Provisionado? (confirmação contábil)</label>
+          <select id="provisionadoEdit"><option value="">—</option><option value="sim" ${billing.provisionado === 'sim' ? 'selected' : ''}>Sim</option><option value="nao" ${billing.provisionado === 'nao' ? 'selected' : ''}>Não</option></select>
+        </div>
+        <div class="field"><label>Mês em que foi provisionado</label><input type="text" id="mesProvisionadoEdit" placeholder="ex: Dez/2026" value="${escapeHtml(billing.mesProvisionado||'')}"></div>
+      </div>
+      <div class="field"><label>Observação</label><textarea id="observacoesEdit" rows="2" placeholder="ex: aguardando novo PC do cliente...">${escapeHtml(billing.observacoes||'')}</textarea></div>
+    </div>`;
+
   openModal(`
     <div class="modal-head"><h3>${title}</h3><button class="icon-btn" id="btnCloseLinhas">${icon('x')}</button></div>
     <div class="modal-body">
       ${refField}
+      ${!opts.standalone ? provisaoFields : ''}
       <p class="help" style="margin-top:0">Escolha quais itens de preço entram ${opts.standalone ? 'neste faturamento' : 'nesta rodada de faturamento'} e a quantidade de cada um. Itens com quantidade 0 ou em branco não aparecem no documento gerado. <span class="muted">(Tabela de preços em uso: <strong>${escapeHtml(versaoAtiva)}</strong>)</span></p>
       ${lines.length ? `<div class="table-wrap"><table><thead><tr><th>Item</th><th>Descrição</th><th>Unidade</th><th>Preço unit.</th><th>Qtd.</th></tr></thead><tbody>${rows}</tbody></table></div>`
         : `<div class="tbl-empty">Nenhum item de preço cadastrado ainda. Adicione itens na aba "Marcos de faturamento".</div>`}
@@ -2025,15 +2085,19 @@ function renderLinhasModal(billing, contract, client, opts) {
 }
 /* ---------- inline contract edit form (Ficha tab) ---------- */
 function renderContractFormInline(contract, client) {
-  const ubOptions = BUSINESS_UNITS.map(u => `
-    <label class="checkbox-row"><input type="checkbox" value="${u}" class="ub-check" ${((contract.unidadeNegocio||[]).includes(u)) ? 'checked' : ''}> ${u}</label>`).join('');
+  const categoriasDisponiveis = Array.from(new Set([...categoriasParaFormulario(contract.fornecedorNome), ...(contract.unidadeNegocio||[])]));
+  const ubOptions = categoriasDisponiveis.map(u => `
+    <label class="checkbox-row"><input type="checkbox" value="${escapeHtml(u)}" class="ub-check" ${((contract.unidadeNegocio||[]).includes(u)) ? 'checked' : ''}> ${escapeHtml(u)}</label>`).join('');
   const contatos = (client && client.contatos) || [];
   const contatoOptions = contatos.map(ct => `<option value="${ct.id}" ${contract.pontoFocalId === ct.id ? 'selected' : ''}>${escapeHtml(ct.nome||'(sem nome)')}${ct.email ? ' — '+escapeHtml(ct.email) : ''}</option>`).join('');
   return `
     <form class="card card-pad" id="fichaEditForm">
       <div class="section-title">Editar dados do contrato</div>
       <div class="field-row">
-        <div class="field"><label>Empresa OceanPact (contratada)</label><input type="text" name="fornecedorNome" value="${escapeHtml(contract.fornecedorNome||'')}"></div>
+        <div class="field"><label>Empresa OceanPact (contratada)</label>
+          <input type="text" name="fornecedorNome" id="fornecedorNomeInput" list="empresaOceanpactList" value="${escapeHtml(contract.fornecedorNome||'')}">
+          <datalist id="empresaOceanpactList">${empresaOptionsHTML(contract.fornecedorNome)}</datalist>
+        </div>
         <div class="field"><label>CNPJ OceanPact</label><input type="text" name="fornecedorCnpj" value="${escapeHtml(contract.fornecedorCnpj||'')}"></div>
       </div>
       <div class="field-row">
@@ -2067,7 +2131,7 @@ function renderContractFormInline(contract, client) {
         <div class="field"><label>Medição</label><input type="text" name="medicao" value="${escapeHtml(contract.medicao||'')}"></div>
         <div class="field"><label>Prazo pagamento (dias)</label><input type="number" name="prazoPagamentoDias" value="${contract.prazoPagamentoDias||30}"></div>
       </div>
-      <div class="field"><label>Unidade de negócio</label><div class="pill-list" style="gap:14px">${ubOptions}</div></div>
+      <div class="field"><label>Unidade de negócio / categoria</label><div class="pill-list" style="gap:14px" id="ubCheckContainer">${ubOptions}</div><p class="help" style="margin-top:6px">A lista depende da empresa OceanPact escolhida acima. Pra criar ou editar categorias, use <a class="link" href="#/categorias">Categorias OceanPact</a> no menu.</p></div>
       <div class="field"><label>Escopo</label><textarea name="escopo">${escapeHtml(contract.escopo||'')}</textarea></div>
       <div class="field-row">
         <div class="field"><label>Reembolso</label><textarea name="reembolso">${escapeHtml(contract.reembolso||'')}</textarea></div>
@@ -2161,6 +2225,14 @@ function wireContractDetailEvents(contract, tab) {
       });
     } else {
       document.getElementById('btnCancelEdit').addEventListener('click', () => { ficheEditMode = false; render(); });
+      const fornecedorInput = document.getElementById('fornecedorNomeInput');
+      if (fornecedorInput) fornecedorInput.addEventListener('input', () => {
+        const checkedNow = Array.from(document.querySelectorAll('.ub-check:checked')).map(el => el.value);
+        const opts = Array.from(new Set([...categoriasParaFormulario(fornecedorInput.value), ...checkedNow]));
+        const container = document.getElementById('ubCheckContainer');
+        container.innerHTML = opts.map(u => `
+          <label class="checkbox-row"><input type="checkbox" value="${escapeHtml(u)}" class="ub-check" ${checkedNow.includes(u) ? 'checked' : ''}> ${escapeHtml(u)}</label>`).join('');
+      });
       const sugerirBtn = document.getElementById('btnSugerirReajuste');
       if (sugerirBtn) sugerirBtn.addEventListener('click', () => {
         const input = document.getElementById('proximoReajusteInput');
@@ -2383,6 +2455,16 @@ function wireContractDetailEvents(contract, tab) {
             const descEl = document.getElementById('marcoDescricaoEdit');
             if (codEl && codEl.value.trim()) billing.codigo = codEl.value.trim();
             if (descEl) billing.descricao = descEl.value.trim();
+            const necProvEl = document.getElementById('necessitaProvisaoEdit');
+            const mesProvEl = document.getElementById('mesProvisaoEdit');
+            const provEl = document.getElementById('provisionadoEdit');
+            const mesProvedEl = document.getElementById('mesProvisionadoEdit');
+            if (necProvEl) billing.necessitaProvisao = necProvEl.value;
+            if (mesProvEl) billing.mesProvisao = mesProvEl.value.trim();
+            if (provEl) billing.provisionado = provEl.value;
+            if (mesProvedEl) billing.mesProvisionado = mesProvedEl.value.trim();
+            const obsEl = document.getElementById('observacoesEdit');
+            if (obsEl) billing.observacoes = obsEl.value.trim();
           }
           await dbSave('billings');
           toast('Faturamento salvo.', 'ok');
@@ -3331,6 +3413,172 @@ function resolveManagerFromInput(inputEl) {
   const found = sortedManagers().find(m => managerLabel(m) === typed);
   return found ? found.id : '';
 }
+
+/* ---------- CATEGORIAS / UNIDADES DE NEGÓCIO POR EMPRESA DO GRUPO OCEANPACT ---------- */
+function sortedCategoriaGrupos() {
+  return [...DB.categoriaGrupos].sort((a, b) => (a.empresa || '').localeCompare(b.empresa || '', 'pt-BR', { sensitivity: 'base' }));
+}
+
+function categoriasParaEmpresa(nomeEmpresa) {
+  const grupo = DB.categoriaGrupos.find(g => (g.empresa || '').trim().toLowerCase() === (nomeEmpresa || '').trim().toLowerCase());
+  return grupo ? (grupo.categorias || []) : null;
+}
+
+function categoriasParaFormulario(nomeEmpresa) {
+  const exact = categoriasParaEmpresa(nomeEmpresa);
+  if (exact) return exact;
+  const all = new Set();
+  DB.categoriaGrupos.forEach(g => (g.categorias || []).forEach(c => all.add(c)));
+  return Array.from(all);
+}
+
+function empresaOptionsHTML(currentValue) {
+  return sortedCategoriaGrupos().map(g => `<option value="${escapeHtml(g.empresa)}" ${g.empresa === currentValue ? 'selected' : ''}>`).join('');
+}
+
+async function seedCategoriaGruposDefaults() {
+  if (DB.categoriaGrupos.length > 0) return;
+  DB.categoriaGrupos.push(
+    { id: uid('cg'), empresa: 'OceanPact Geociências', categorias: ['Oceanografia', 'Geotecnia', 'Geofísica', 'Monitoramento Ambiental'] },
+    { id: uid('cg'), empresa: 'OceanPact Response', categorias: ['Projetos', 'Treinamentos', 'Simulados', 'Consultoria', 'Emergência', 'Dedicado'] },
+  );
+  await dbSave('categoriaGrupos');
+}
+
+function renderCategoriasPage() {
+  const grupos = sortedCategoriaGrupos();
+  const rows = grupos.map(g => `
+    <tr>
+      <td style="min-width:220px"><input type="text" value="${escapeHtml(g.empresa||'')}" data-catfield="empresa" data-catid="${g.id}"></td>
+      <td style="min-width:340px">
+        <div class="pill-list" data-tags-for="${g.id}">
+          ${(g.categorias||[]).map((c, i) => `<span class="pill" style="display:inline-flex;align-items:center;gap:6px">${escapeHtml(c)}<button type="button" class="icon-btn" style="width:18px;height:18px" data-rm-tag="${g.id}" data-tag-idx="${i}" title="Remover">${icon('x')}</button></span>`).join('') || '<span class="muted" style="font-size:12.5px">Nenhuma categoria ainda</span>'}
+        </div>
+        <div style="display:flex;gap:6px;margin-top:8px">
+          <input type="text" placeholder="Nova categoria…" data-newtag-for="${g.id}" style="max-width:220px">
+          <button type="button" class="btn btn-outline btn-sm" data-addtag="${g.id}">${icon('plus')}Adicionar</button>
+        </div>
+      </td>
+      <td style="width:40px"><button class="icon-btn" data-del-empresa="${g.id}" title="Remover empresa">${icon('trash')}</button></td>
+    </tr>`).join('');
+
+  const html = `
+    <div class="card card-pad">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="section-title">Categorias por empresa do grupo OceanPact</div>
+        <button class="btn btn-primary btn-sm" id="btnAddEmpresa">${icon('plus')}Nova empresa</button>
+      </div>
+      <p class="help">Cada empresa do grupo (OceanPact Geociências, OceanPact Response, etc.) tem sua própria lista de categorias/tipos de serviço. Na Ficha do contrato, ao escolher a empresa contratada, só as categorias dela aparecem para marcar.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Empresa</th><th>Categorias</th><th></th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="3" class="tbl-empty">Nenhuma empresa cadastrada ainda.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>`;
+  layout(html, { title: 'Categorias OceanPact', crumbs: `${grupos.length} empresa(s) cadastrada(s)` });
+  wireCategoriasEvents();
+}
+
+function wireCategoriasEvents() {
+  document.querySelectorAll('[data-catfield]').forEach(el => {
+    el.addEventListener('change', async () => {
+      const g = DB.categoriaGrupos.find(x => x.id === el.dataset.catid);
+      if (!g) return;
+      g[el.dataset.catfield] = el.value.trim();
+      await dbSave('categoriaGrupos');
+      toast('Empresa atualizada.', 'ok');
+      render();
+    });
+  });
+  document.querySelectorAll('[data-del-empresa]').forEach(el => {
+    el.addEventListener('click', async () => {
+      if (!confirm('Remover esta empresa e suas categorias do cadastro?')) return;
+      DB.categoriaGrupos = DB.categoriaGrupos.filter(g => g.id !== el.dataset.delEmpresa);
+      await dbSave('categoriaGrupos');
+      toast('Empresa removida.', 'ok');
+      render();
+    });
+  });
+  document.querySelectorAll('[data-addtag]').forEach(el => {
+    el.addEventListener('click', async () => {
+      const g = DB.categoriaGrupos.find(x => x.id === el.dataset.addtag);
+      const input = document.querySelector(`[data-newtag-for="${el.dataset.addtag}"]`);
+      if (!g || !input || !input.value.trim()) return;
+      g.categorias = g.categorias || [];
+      g.categorias.push(input.value.trim());
+      await dbSave('categoriaGrupos');
+      render();
+    });
+  });
+  document.querySelectorAll('[data-rm-tag]').forEach(el => {
+    el.addEventListener('click', async () => {
+      const g = DB.categoriaGrupos.find(x => x.id === el.dataset.rmTag);
+      if (!g) return;
+      g.categorias.splice(Number(el.dataset.tagIdx), 1);
+      await dbSave('categoriaGrupos');
+      render();
+    });
+  });
+  const addBtn = document.getElementById('btnAddEmpresa');
+  if (addBtn) addBtn.addEventListener('click', async () => {
+    DB.categoriaGrupos.push({ id: uid('cg'), empresa: '', categorias: [] });
+    await dbSave('categoriaGrupos');
+    render();
+  });
+}
+
+/* ---------- PENDÊNCIAS DE FATURAMENTO (visão cross-contrato) ---------- */
+function renderPendenciasPage() {
+  const all = DB.billings.map(b => ({ b, contract: getContract(b.contractId) })).filter(x => x.contract);
+  const pendentes = all.filter(({ b }) => computeStatus(b) !== 'pago');
+
+  const totalPendente = pendentes.reduce((s, { b }) => s + (Number(b.valor) || 0), 0);
+  const esqueceramProvisao = pendentes.filter(({ b }) => b.necessitaProvisao === 'sim' && b.provisionado !== 'sim').length;
+
+  const rows = pendentes
+    .sort((a, b) => (Number(b.b.valor)||0) - (Number(a.b.valor)||0))
+    .map(({ b, contract }) => {
+      const client = getClient(contract.clientCnpj);
+      const ct = client && (client.contatos||[]).find(c => c.id === contract.pontoFocalId);
+      const st = computeStatus(b);
+      const simNao = (v) => v ? `<span style="color:var(--success)">Sim</span>` : `<span class="muted">Não</span>`;
+      const provisaoAlerta = (b.necessitaProvisao === 'sim' && b.provisionado !== 'sim');
+      return `
+      <tr class="clickable" data-goto="contrato/${contract.id}/faturamento">
+        <td><strong>${escapeHtml(b.codigo)}</strong><div class="muted" style="font-size:11.5px;max-width:200px">${escapeHtml((b.descricao||'').slice(0,60))}</div></td>
+        <td>${escapeHtml(client ? client.nome : '—')}</td>
+        <td class="mono">${escapeHtml(contract.numero || '—')}</td>
+        <td class="mono">${formatCurrency(b.valor, contract.moeda)}</td>
+        <td>${simNao(b.bmSentDate)}</td>
+        <td>${simNao(b.proformaSentDate)}</td>
+        <td>${simNao(b.bmApprovedDate)}</td>
+        <td>${simNao(b.nfSentDate)}</td>
+        <td>${b.necessitaProvisao === 'sim' ? (b.provisionado === 'sim' ? simNao(true) : `<span style="color:var(--warning);font-weight:700">⚠ Não</span>`) : '<span class="muted">—</span>'}</td>
+        <td>${statusBadge(st)}</td>
+        <td>${escapeHtml(ct ? ct.nome||'' : '—')}</td>
+        <td class="muted" style="max-width:220px;font-size:11.5px">${escapeHtml((b.observacoes||'').slice(0,90))}</td>
+      </tr>`;
+    }).join('');
+
+  const html = `
+    <div class="grid grid-3" style="grid-template-columns:repeat(3,1fr);margin-bottom:18px">
+      <div class="stat-card"><div class="stat-top"><div class="stat-label">Total em pendência</div><div class="stat-icon" style="background:var(--warning-bg);color:var(--warning)">${icon('money')}</div></div><div class="stat-value" style="font-size:19px">${formatCurrency(totalPendente, 'BRL')}</div></div>
+      <div class="stat-card"><div class="stat-top"><div class="stat-label">Serviços pendentes</div><div class="stat-icon" style="background:var(--warning-bg);color:var(--warning)">${icon('clock')}</div></div><div class="stat-value">${pendentes.length}</div></div>
+      <div class="stat-card"><div class="stat-top"><div class="stat-label">⚠ Esqueceram de provisionar</div><div class="stat-icon" style="background:var(--warning-bg);color:var(--warning)">${icon('alert')}</div></div><div class="stat-value">${esqueceramProvisao}</div></div>
+    </div>
+    <div class="card">
+      <div class="card-pad" style="padding-bottom:0"><div class="section-title">Pendências de faturamento (todos os contratos)</div><p class="help">Todo marco/faturamento com status diferente de "Pago". Clique numa linha para abrir o contrato.</p></div>
+      <div class="table-wrap" style="border:none">
+        <table class="tbl-center-head">
+          <thead><tr><th>Serviço</th><th>Cliente</th><th>Contrato</th><th>Valor</th><th>BM Enviado?</th><th>Proforma Enviada?</th><th>BM Aprovado?</th><th>NF Emitida?</th><th>Provisionado?</th><th>Status</th><th>Ponto Focal</th><th>Observação</th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="12" class="tbl-empty">Nenhuma pendência — tudo em dia! 🎉</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>`;
+  layout(html, { title: 'Pendências de Faturamento', crumbs: `${pendentes.length} pendência(s) em ${new Set(pendentes.map(p=>p.contract.id)).size} contrato(s)` });
+  bindGoto();
+}
 /* ---------- NOVO CONTRATO WIZARD ---------- */
 let wizard = null;
 function resetWizard() {
@@ -3491,8 +3739,9 @@ function renderWizardStep2() {
 
 function renderWizardStep3() {
   const d = wizard.data;
-  const ubOptions = BUSINESS_UNITS.map(u => `
-    <label class="checkbox-row"><input type="checkbox" value="${u}" class="ub-check" ${(d.contrato.unidadeNegocio||[]).includes(u) ? 'checked' : ''}> ${u}</label>`).join('');
+  const categoriasDisponiveis = Array.from(new Set([...categoriasParaFormulario(d.fornecedor.nome), ...(d.contrato.unidadeNegocio||[])]));
+  const ubOptions = categoriasDisponiveis.map(u => `
+    <label class="checkbox-row"><input type="checkbox" value="${escapeHtml(u)}" class="ub-check" ${(d.contrato.unidadeNegocio||[]).includes(u) ? 'checked' : ''}> ${escapeHtml(u)}</label>`).join('');
 
   const marcosRows = d.marcos.map((m, i) => `
     <tr>
@@ -3540,7 +3789,7 @@ function renderWizardStep3() {
       <div class="card card-pad" style="margin-bottom:18px">
         <div class="section-title">Empresa OceanPact (contratada)</div>
         <div class="field-row">
-          <div class="field"><label>Razão social</label><input type="text" name="fornecedorNome" value="${escapeHtml(d.fornecedor.nome)}"></div>
+          <div class="field"><label>Razão social</label><input type="text" name="fornecedorNome" id="fornecedorNomeInputWizard" list="empresaOceanpactListWizard" value="${escapeHtml(d.fornecedor.nome)}"><datalist id="empresaOceanpactListWizard">${empresaOptionsHTML(d.fornecedor.nome)}</datalist></div>
           <div class="field"><label>CNPJ</label><input type="text" name="fornecedorCnpj" value="${escapeHtml(d.fornecedor.cnpj)}"></div>
         </div>
       </div>
@@ -3564,7 +3813,7 @@ function renderWizardStep3() {
           <div class="field"><label>Medição</label><input type="text" name="medicao" value="${escapeHtml(d.contrato.medicao||'')}"></div>
           <div class="field"><label>Prazo pagamento (dias)</label><input type="number" name="prazoPagamentoDias" value="${d.contrato.prazoPagamentoDias||30}"></div>
         </div>
-        <div class="field"><label>Unidade de negócio</label><div class="pill-list" style="gap:14px">${ubOptions}</div></div>
+        <div class="field"><label>Unidade de negócio / categoria</label><div class="pill-list" style="gap:14px" id="ubCheckContainerWizard">${ubOptions}</div></div>
         <div class="field"><label>Escopo</label><textarea name="escopo">${escapeHtml(d.contrato.escopo||'')}</textarea></div>
         <div class="field-row">
           <div class="field"><label>Reembolso</label><textarea name="reembolso">${escapeHtml(d.contrato.reembolso||'')}</textarea></div>
@@ -3676,6 +3925,14 @@ function wireWizardEvents() {
     });
   }
   if (wizard.step === 3) {
+    const fornecedorInputW = document.getElementById('fornecedorNomeInputWizard');
+    if (fornecedorInputW) fornecedorInputW.addEventListener('input', () => {
+      const checkedNow = Array.from(document.querySelectorAll('.ub-check:checked')).map(el => el.value);
+      const opts = Array.from(new Set([...categoriasParaFormulario(fornecedorInputW.value), ...checkedNow]));
+      const container = document.getElementById('ubCheckContainerWizard');
+      container.innerHTML = opts.map(u => `
+        <label class="checkbox-row"><input type="checkbox" value="${escapeHtml(u)}" class="ub-check" ${checkedNow.includes(u) ? 'checked' : ''}> ${escapeHtml(u)}</label>`).join('');
+    });
     document.getElementById('btnBackStep1').addEventListener('click', () => { resetWizard(); render(); });
     document.getElementById('btnAddMarcoWizard').addEventListener('click', () => {
       captureWizardForm();
@@ -3907,7 +4164,9 @@ function render() {
   else if (route.name === 'contratos') renderContractsList();
   else if (route.name === 'contrato') renderContractDetail(route.params[0], route.params[1]);
   else if (route.name === 'novo-contrato') renderNewContract();
+  else if (route.name === 'pendencias') renderPendenciasPage();
   else if (route.name === 'gerentes') renderManagersPage();
+  else if (route.name === 'categorias') renderCategoriasPage();
   else if (route.name === 'admin') renderAdminPage();
   else renderDashboard();
   wireDateMasks(document);
@@ -4071,7 +4330,7 @@ async function proceedIntoApp() {
   }
   currentMember = member;
   stopFirestoreSync();
-  startFirestoreSync(() => render());
+  startFirestoreSync(() => { render(); seedCategoriaGruposDefaults(); });
 }
 
 async function handleEmailLinkSignIn() {
