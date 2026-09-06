@@ -156,7 +156,9 @@ A data aparece em **vermelho** quando já venceu (é anterior a hoje) e não exi
 
 Na hora de registrar um aditivo, agora tem um checkbox explícito: "Este aditivo aplica reajuste de preços?". É essa marcação (não mais uma suposição da IA) que o site usa para saber se o reajuste previsto na Ficha foi de fato aplicado.
 
-Se você marcar isso, o site oferece criar uma **nova versão da tabela de preços** — uma cópia da tabela atual, pronta para você editar com os valores reajustados. A tabela antiga fica guardada (não é apagada), e na aba "Marcos de faturamento" tem um seletor para ver qualquer versão e um botão "Usar esta versão" — só a versão marcada como "em uso" é a que entra nos BMs/Proformas gerados a partir dali. Marcos já faturados antes da mudança continuam usando os preços da versão que estava em uso na época (o histórico não muda).
+Antes de mostrar essa tela, o site já tenta ler o próprio PDF do aditivo em busca de uma **tabela de preços revisada** (comum em aditivos de reajuste, que trazem os novos valores linha a linha). Se encontrar, mostra essa tabela pra você revisar/editar, e ao marcar o checkbox de reajuste, a nova versão da tabela de preços já nasce com esses valores novos — sem precisar copiar e editar na mão. Só se o aditivo não trouxer uma tabela explícita (por exemplo, só citar um percentual em texto corrido) é que o site duplica a tabela atual para você preencher manualmente — nunca calcula um reajuste sozinho a partir de um percentual.
+
+A tabela antiga fica guardada (não é apagada), e na aba "Marcos de faturamento" tem um seletor para ver qualquer versão e um botão "Usar esta versão" — só a versão marcada como "em uso" é a que entra nos BMs/Proformas gerados a partir dali. Marcos já faturados antes da mudança continuam usando os preços da versão que estava em uso na época (o histórico não muda).
 
 ## Perguntas comuns
 

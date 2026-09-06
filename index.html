@@ -968,6 +968,9 @@ const ADITIVO_SYSTEM_PROMPT = `Você é um assistente que analisa aditivos/termo
   ],
   "marcosAlterados": [
     {"codigoExistente": "BM3", "campo": "valor", "valorNovo": 0, "motivo": "breve explicação"}
+  ],
+  "tabelaPrecoRevisada": [
+    {"codigo": "1", "descricao": "", "unidade": "", "precoUnitario": 0}
   ]
 }
 
@@ -975,6 +978,7 @@ Regras importantes:
 - "campo" em "alteracoes" só pode ser um destes: dataTermino, dataInicio, valorTotal, escopo, medicao, prazoPagamentoDias, observacoes, riscos, reembolso, clausulaReajuste, clausulaCancelamento. Só inclua os campos que o aditivo de fato altera — não repita valores que não mudaram.
 - "marcosNovos" é para linhas de serviço/marcos de faturamento inteiramente novos criados pelo aditivo.
 - "marcosAlterados" é para marcos JÁ EXISTENTES no contrato original (use o código exatamente como aparece na lista de marcos atuais fornecida) cujo valor, percentual, descrição ou gatilho tenham sido alterados pelo aditivo. "campo" aqui só pode ser: valor, percentual, descricao, gatilho, dataPrevisao.
+- "tabelaPrecoRevisada" é SÓ para quando o aditivo traz uma TABELA DE PREÇOS REVISADA explícita, com os novos valores unitários de cada item (comum em aditivos de reajuste) — extraia cada linha dessa tabela nova: código (pra casar com o item existente do contrato, use o mesmo número/código), descrição e o NOVO preço unitário. Se o aditivo não trouxer uma tabela de preços revisada explícita (só mencionar um percentual de reajuste em texto corrido, por exemplo, sem listar os novos valores linha a linha), devolva uma lista vazia — não calcule nem invente os novos valores a partir de um percentual.
 - Datas em AAAA-MM-DD. Valores numéricos com ponto decimal, sem "R$" e sem separador de milhar.
 - Se não houver certeza sobre uma alteração, não a inclua — é melhor deixar de fora do que inventar.
 - Nunca repita nos resultados algo que já está igual no contrato original.
@@ -1774,13 +1778,13 @@ function renderFichaView(contract, client) {
           <dt>Valor total</dt><dd><strong>${formatCurrency(contract.valorTotal, contract.moeda)}</strong></dd>
           <dt>Medição</dt><dd>${escapeHtml(contract.medicao || '—')}</dd>
           <dt>Prazo pagamento</dt><dd>${contract.prazoPagamentoDias ? contract.prazoPagamentoDias + ' dias' : '—'}</dd>
+          <dt>Próximo reajuste</dt><dd>${contract.proximoReajuste ? `<span style="${reajusteAtrasado(contract) ? 'color:var(--danger);font-weight:700' : ''}">${formatDate(contract.proximoReajuste)}${reajusteAtrasado(contract) ? ' — vencido, sem aditivo' : ''}</span>` : '—'}</dd>
         </dl>
       </div>
       <div class="divider"></div>
       <div class="grid grid-2">
         <dl class="kv">
           <dt>Ponto focal do cliente</dt><dd>${(() => { const ct = client && (client.contatos||[]).find(c => c.id === contract.pontoFocalId); return ct ? escapeHtml(ct.nome||'') + (ct.email ? ' · '+escapeHtml(ct.email):'') + (ct.telefone ? ' · '+escapeHtml(ct.telefone):'') : '—'; })()}</dd>
-          <dt>Próximo reajuste</dt><dd>${contract.proximoReajuste ? `<span style="${reajusteAtrasado(contract) ? 'color:var(--danger);font-weight:700' : ''}">${formatDate(contract.proximoReajuste)}${reajusteAtrasado(contract) ? ' — vencido, sem aditivo' : ''}</span>` : '—'}</dd>
         </dl>
         <dl class="kv">
           <dt>Gerente OceanPact responsável</dt><dd>${(() => { const m = DB.managers.find(x => x.id === contract.gerenteId); return m ? escapeHtml(managerLabel(m)) : '—'; })()}</dd>
@@ -2501,7 +2505,7 @@ function resetAditivoState(contractId) {
   aditivoState = {
     contractId, step: 1, fileName: '', fileHash: '', progressMsg: '', error: null,
     parsed: null,
-    marcosNovos: [], marcosAlterados: [], alteracoes: [],
+    marcosNovos: [], marcosAlterados: [], alteracoes: [], tabelaPrecoRevisada: [],
   };
 }
 
@@ -2593,6 +2597,17 @@ function aditivoStep3Html() {
     </tr>`;
   }).join('');
 
+  const precoRows = (aditivoState.tabelaPrecoRevisada || []).map((it, i) => {
+    const atual = activeContractLines(contract).find(l => l.codigo === it.codigo);
+    return `<tr>
+      <td style="width:34px"><input type="checkbox" data-pidx="${i}" class="preco-check" checked></td>
+      <td style="width:60px"><input type="text" value="${escapeHtml(it.codigo||'')}" data-pidx="${i}" data-pf="codigo" style="width:52px"></td>
+      <td style="min-width:160px"><textarea rows="2" data-pidx="${i}" data-pf="descricao">${escapeHtml(it.descricao || (atual ? atual.descricao : ''))}</textarea></td>
+      <td class="muted mono">${atual ? formatCurrency(atual.precoUnitario, contract.moeda) : '—'}</td>
+      <td style="width:120px"><input type="number" step="0.01" value="${it.precoUnitario||0}" data-pidx="${i}" data-pf="precoUnitario"></td>
+    </tr>`;
+  }).join('');
+
   return `
     <div class="modal-body">
       <div class="card card-pad" style="background:var(--blue-pale);border:none;margin-bottom:16px">
@@ -2622,13 +2637,21 @@ function aditivoStep3Html() {
         <tbody>${alteradosRows}</tbody></table>
       </div>` : ''}
 
+      ${(aditivoState.tabelaPrecoRevisada || []).length ? `
+      <div class="section-title">Tabela de preços revisada encontrada no aditivo</div>
+      <p class="help" style="margin-top:0">Esses valores viram a base da nova versão da tabela de preços, se você marcar abaixo que este aditivo é um reajuste.</p>
+      <div class="table-wrap" style="margin-bottom:16px">
+        <table><thead><tr><th></th><th>Item</th><th>Descrição</th><th>Preço atual</th><th>Preço novo</th></tr></thead>
+        <tbody>${precoRows}</tbody></table>
+      </div>` : ''}
+
       ${!aditivoState.alteracoes.length && !aditivoState.marcosNovos.length && !aditivoState.marcosAlterados.length
         ? `<div class="help">A IA não identificou alterações estruturadas neste PDF. Verifique se é mesmo um aditivo, ou registre as mudanças manualmente na Ficha/Marcos do contrato.</div>` : ''}
 
       <div class="card card-pad" style="background:#fffaf0;border:1px solid #f0d68a;margin-top:16px">
         <label class="checkbox-row" style="align-items:flex-start">
-          <input type="checkbox" id="chkEhReajuste">
-          <span><strong>Este aditivo aplica reajuste de preços?</strong><br><span class="help" style="margin:2px 0 0">Marque isso se o aditivo reajusta os valores do contrato — o site usa essa marcação (não mais uma suposição da IA) pra saber se o reajuste previsto na Ficha foi de fato aplicado, e vai oferecer criar uma nova versão da tabela de preços com os valores reajustados.</span></span>
+          <input type="checkbox" id="chkEhReajuste" ${(aditivoState.tabelaPrecoRevisada||[]).length ? 'checked' : ''}>
+          <span><strong>Este aditivo aplica reajuste de preços?</strong><br><span class="help" style="margin:2px 0 0">Marque isso se o aditivo reajusta os valores do contrato — o site usa essa marcação (não mais uma suposição da IA) pra saber se o reajuste previsto na Ficha foi de fato aplicado.${(aditivoState.tabelaPrecoRevisada||[]).length ? ' A tabela revisada encontrada acima já vem pronta pra virar a nova versão da tabela de preços.' : ' Como não foi encontrada uma tabela revisada no PDF, o site vai só duplicar a tabela atual pra você preencher os novos valores manualmente.'}</span></span>
         </label>
       </div>
     </div>
@@ -2690,12 +2713,14 @@ async function handleAditivoUpload(file) {
         medicao: contract.medicao, prazoPagamentoDias: contract.prazoPagamentoDias,
       },
       marcosAtuais: billingsForContract(contract.id).map(b => ({ codigo: b.codigo, descricao: b.descricao, percentual: b.percentual, valor: b.valor, gatilho: b.gatilho })),
+      itensPrecoAtuais: activeContractLines(contract).map(l => ({ codigo: l.codigo, descricao: l.descricao, unidade: l.unidade, precoUnitario: l.precoUnitario })),
     };
     const parsed = await callClaudeAditivoExtraction(context, text);
     aditivoState.parsed = parsed;
     aditivoState.alteracoes = Array.isArray(parsed.alteracoes) ? parsed.alteracoes.filter(a => ADITIVO_FIELD_LABELS[a.campo]) : [];
     aditivoState.marcosNovos = Array.isArray(parsed.marcosNovos) ? parsed.marcosNovos.map(m => ({ ...m, valor: Number(m.valor)||0 })) : [];
     aditivoState.marcosAlterados = Array.isArray(parsed.marcosAlterados) ? parsed.marcosAlterados : [];
+    aditivoState.tabelaPrecoRevisada = Array.isArray(parsed.tabelaPrecoRevisada) ? parsed.tabelaPrecoRevisada.map(it => ({ ...it, precoUnitario: Number(it.precoUnitario)||0 })) : [];
     aditivoState.step = 3;
     renderAditivoModal();
   } catch (err) {
@@ -2751,6 +2776,21 @@ async function applyAditivo() {
   const chkReajuste = document.getElementById('chkEhReajuste');
   log.ehReajuste = !!(chkReajuste && chkReajuste.checked);
 
+  const precoRevisadoSelecionado = [];
+  document.querySelectorAll('.preco-check').forEach(cb => {
+    if (!cb.checked) return;
+    const i = Number(cb.dataset.pidx);
+    const codigoEl = document.querySelector(`[data-pidx="${i}"][data-pf="codigo"]`);
+    const descEl = document.querySelector(`[data-pidx="${i}"][data-pf="descricao"]`);
+    const precoEl = document.querySelector(`[data-pidx="${i}"][data-pf="precoUnitario"]`);
+    precoRevisadoSelecionado.push({
+      codigo: codigoEl ? codigoEl.value.trim() : '',
+      descricao: descEl ? descEl.value.trim() : '',
+      precoUnitario: precoEl ? Number(precoEl.value) || 0 : 0,
+    });
+  });
+  log.tabelaPrecoAplicada = log.ehReajuste ? precoRevisadoSelecionado.length : 0;
+
   contract.aditivos = contract.aditivos || [];
   contract.aditivos.push(log);
 
@@ -2761,17 +2801,64 @@ async function applyAditivo() {
   ficheEditMode = false;
 
   if (log.ehReajuste) {
-    const criarNova = confirm('Esse aditivo foi marcado como reajuste de preços. Deseja criar uma nova versão da tabela de preços (copiando os itens atuais) para você ajustar com os valores reajustados? A versão anterior continua guardada para consulta.');
-    if (criarNova) {
-      const novaVersao = await duplicarTabelaPrecos(contract, 'Reajuste ' + formatDate(todayISO()));
+    if (precoRevisadoSelecionado.length) {
+      const novaVersao = await criarVersaoComPrecosRevisados(contract, precoRevisadoSelecionado, 'Reajuste ' + formatDate(todayISO()));
       if (novaVersao) {
-        toast('Nova versão da tabela de preços criada e ativada: "' + novaVersao + '". Ajuste os preços na aba Marcos de faturamento.', 'ok');
+        toast('Nova versão da tabela de preços criada com os valores do aditivo e já ativada: "' + novaVersao + '". Confira na aba Marcos de faturamento.', 'ok');
         location.hash = `#/contrato/${contract.id}/marcos`;
         return;
+      }
+    } else {
+      const criarNova = confirm('Esse aditivo foi marcado como reajuste de preços, mas não foi encontrada uma tabela revisada no PDF. Deseja criar uma nova versão da tabela de preços (copiando os itens atuais) para você preencher manualmente com os valores reajustados? A versão anterior continua guardada para consulta.');
+      if (criarNova) {
+        const novaVersao = await duplicarTabelaPrecos(contract, 'Reajuste ' + formatDate(todayISO()));
+        if (novaVersao) {
+          toast('Nova versão da tabela de preços criada e ativada: "' + novaVersao + '". Ajuste os preços na aba Marcos de faturamento.', 'ok');
+          location.hash = `#/contrato/${contract.id}/marcos`;
+          return;
+        }
       }
     }
   }
   render();
+}
+
+// Cria uma nova versão da tabela de preços já com os valores extraídos do aditivo.
+// Itens cujo código bate com um item da versão ativa herdam unidade/descrição que
+// não vieram no aditivo; itens com código novo (não existente antes) entram como
+// item novo mesmo assim, marcados nessa nova versão.
+async function criarVersaoComPrecosRevisados(contract, itensRevisados, nomeSugerido) {
+  const atual = activeContractLines(contract);
+  const existentes = contractLineVersions(contract.id);
+  let nome = nomeSugerido;
+  let n = 2;
+  while (existentes.includes(nome)) { nome = nomeSugerido + ' (' + n + ')'; n++; }
+
+  const codigosRevisados = new Set(itensRevisados.map(it => it.codigo));
+  // itens que não foram tocados pelo aditivo continuam com o preço da versão atual
+  atual.filter(l => !codigosRevisados.has(l.codigo)).forEach(l => {
+    DB.contractLines.push({
+      id: uid('ln'), contractId: contract.id, codigo: l.codigo, descricao: l.descricao,
+      unidade: l.unidade, precoUnitario: l.precoUnitario, quantidadeContratada: l.quantidadeContratada || '',
+      versao: nome,
+    });
+  });
+  // itens revisados pelo aditivo entram com o preço novo
+  itensRevisados.forEach(it => {
+    const original = atual.find(l => l.codigo === it.codigo);
+    DB.contractLines.push({
+      id: uid('ln'), contractId: contract.id, codigo: it.codigo,
+      descricao: it.descricao || (original ? original.descricao : ''),
+      unidade: original ? original.unidade : '',
+      precoUnitario: it.precoUnitario, quantidadeContratada: original ? (original.quantidadeContratada || '') : '',
+      versao: nome,
+    });
+  });
+
+  contract.tabelaAtivaVersao = nome;
+  await dbSave('contractLines');
+  await dbSave('contracts');
+  return nome;
 }
 
 // Copia todos os itens da versão ATIVA da tabela de preços para uma nova versão
