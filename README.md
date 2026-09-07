@@ -174,6 +174,16 @@ Nova aba **Pendências** no menu — junta todos os marcos/faturamentos de todos
 
 Também foi adicionado um campo de **Observação** em cada marco (na janela de Editar) — pra anotações livres tipo "aguardando novo PC do cliente", que aparecem na lista de Pendências.
 
+## Mês/ano de provisionamento estruturado + filtro
+
+Os campos "Mês que deveria ser provisionado" e "Mês em que foi provisionado" agora são dois seletores (Mês + Ano) em vez de texto livre — isso garante que tudo fique no mesmo formato por trás, permitindo filtrar de verdade. Na aba **Pendências**, apareceu um filtro "Filtrar por mês de provisão previsto" que só mostra os meses que realmente têm pendência cadastrada.
+
+## Correções de robustez (varredura de bugs)
+
+- **Exclusões agora são diretas no banco de dados**, em vez de depender de "ressincronizar a coleção inteira" — antes, excluir um item comparava a lista local com o servidor e apagava qualquer coisa que não estivesse na lista local, o que criava um risco raro (mas real) de uma pessoa apagar por engano algo que outra pessoa tinha acabado de adicionar em outra sessão, se as duas ações acontecessem quase ao mesmo tempo. Agora cada exclusão (item de preço, gerente, empresa, marco, cliente, contrato) apaga só aquele documento específico.
+- **Gerente com nome duplicado**: se dois gerentes cadastrados tiverem nome e empresa exatamente iguais, o campo de busca agora diferencia automaticamente (mostra um número no segundo, etc.), evitando selecionar o errado.
+- Limpeza de variáveis não usadas que sobraram de mudanças anteriores (sem efeito visível, só código mais limpo).
+
 ## Perguntas comuns
 
 **A pessoa não recebeu o e-mail de convite.** Confira a caixa de spam. O remetente é algo como `noreply@SEU-PROJETO.firebaseapp.com` — pode demorar 1–2 minutos. Se quiser, use "Reenviar convite" na página de Administração.

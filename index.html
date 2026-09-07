@@ -524,14 +524,17 @@ function cleanForFirestore(obj) {
 
 async function syncCollection(name, items, idFn) {
   const { db, fb } = window.__firebase;
-  const colRef = fb.collection(db, name);
-  const snap = await fb.getDocs(colRef);
-  const existingIds = new Set(snap.docs.map(d => d.id));
-  const currentIds = new Set(items.map(idFn));
   const batch = fb.writeBatch(db);
   items.forEach(item => batch.set(fb.doc(db, name, idFn(item)), cleanForFirestore(item)));
-  existingIds.forEach(id => { if (!currentIds.has(id)) batch.delete(fb.doc(db, name, id)); });
   await batch.commit();
+}
+
+// Apaga um documento específico direto (sem depender de "sincronizar a coleção
+// inteira"), pra excluir um item nunca correr o risco de apagar por engano algo
+// que outra pessoa acabou de adicionar/editar ao mesmo tempo em outra sessão.
+async function deleteFirestoreDoc(name, id) {
+  const { db, fb } = window.__firebase;
+  await fb.deleteDoc(fb.doc(db, name, id));
 }
 
 async function dbSave(part) {
@@ -719,6 +722,41 @@ function toast(msg, kind) {
   el.textContent = msg;
   wrap.appendChild(el);
   setTimeout(() => el.remove(), 4200);
+}
+
+/* ---------- mês/ano estruturado (provisionamento) ---------- */
+const MESES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+function mesAnoToLabel(v) {
+  if (!v) return '';
+  const m = String(v).match(/^(\d{4})-(\d{2})$/);
+  if (!m) return v; // valor antigo em texto livre — mostra como estava
+  const idx = Number(m[2]) - 1;
+  return (MESES_PT[idx] || m[2]) + '/' + m[1];
+}
+function mesAnoPickerHTML(value, idPrefix) {
+  const m = String(value || '').match(/^(\d{4})-(\d{2})$/);
+  const curMes = m ? Number(m[2]) : '';
+  const curAno = m ? Number(m[1]) : '';
+  const anoAtual = Number(todayISO().slice(0, 4));
+  const anos = [];
+  for (let a = anoAtual - 2; a <= anoAtual + 3; a++) anos.push(a);
+  return `
+    <div style="display:flex;gap:6px">
+      <select id="${idPrefix}Mes" style="flex:1">
+        <option value="">Mês</option>
+        ${MESES_PT.map((nome, i) => `<option value="${i+1}" ${curMes === i+1 ? 'selected' : ''}>${nome}</option>`).join('')}
+      </select>
+      <select id="${idPrefix}Ano" style="max-width:110px">
+        <option value="">Ano</option>
+        ${anos.map(a => `<option value="${a}" ${curAno === a ? 'selected' : ''}>${a}</option>`).join('')}
+      </select>
+    </div>`;
+}
+function readMesAnoPicker(idPrefix) {
+  const mesEl = document.getElementById(idPrefix + 'Mes');
+  const anoEl = document.getElementById(idPrefix + 'Ano');
+  if (!mesEl || !anoEl || !mesEl.value || !anoEl.value) return '';
+  return anoEl.value + '-' + String(mesEl.value).padStart(2, '0');
 }
 /* ---------- PDF text extraction ---------- */
 async function extractPdfText(file, onProgress) {
@@ -1444,6 +1482,7 @@ function renderDashboard() {
   });
 
   const provisaoPendenteCount = allBillings.filter(({ b }) => b.necessitaProvisao === 'sim' && b.provisionado !== 'sim').length;
+  const qtdPendenteNF = allBillings.filter(({ b }) => !!b.bmGeneratedDate && !b.nfSentDate).length;
 
   let vencidos = 0, vencendo = 0, vigentes = 0;
   DB.contracts.forEach(c => {
@@ -1456,7 +1495,7 @@ function renderDashboard() {
   const kpis = [
     { label: 'Contratos ativos', value: DB.contracts.length, icon: 'file', color: 'var(--navy)', bg: 'var(--blue-pale)' },
     { label: 'Clientes', value: Object.keys(DB.clients).length, icon: 'building', color: 'var(--navy)', bg: 'var(--blue-pale)' },
-    { label: 'Faturamentos pendentes', value: qtdPendente, icon: 'clock', color: 'var(--warning)', bg: 'var(--warning-bg)', nav: 'pendencias' },
+    { label: 'Faturamentos pendentes', value: qtdPendenteNF, icon: 'clock', color: 'var(--warning)', bg: 'var(--warning-bg)', nav: 'pendencias' },
     { label: 'Provisão pendente', value: provisaoPendenteCount, icon: 'alert', color: 'var(--warning)', bg: 'var(--warning-bg)' },
     { label: 'Valor a receber', value: formatCurrency(valorPendente, 'BRL'), icon: 'money', color: 'var(--navy)', bg: 'var(--blue-pale)', isText: true },
     { label: 'Valor recebido', value: formatCurrency(valorPago, 'BRL'), icon: 'check', color: 'var(--success)', bg: 'var(--success-bg)', isText: true },
@@ -1548,7 +1587,7 @@ function confirmDeleteClient(client) {
 async function deleteClient(client) {
   delete DB.clients[client.cnpj];
   try {
-    await dbSave('clients');
+    await deleteFirestoreDoc('clients', client.cnpj);
     toast('Cliente excluído.', 'ok');
     location.hash = '#/clientes';
   } catch (err) {
@@ -1970,7 +2009,6 @@ function renderFaturamentoTab(contract, client) {
     const st = computeStatus(b);
     const dateField = (label, field, val) => `
       <input ${dateBrAttrs(val, `data-datefield="${field}" data-bid="${b.id}" style="padding:4px 6px;font-size:12px;width:90px"`)}>`;
-    const linhasCount = (b.linhas || []).filter(l => Number(l.quantidade) > 0).length;
     return `
     <tr>
       <td><strong>${escapeHtml(b.codigo)}</strong><div class="muted" style="max-width:220px;font-size:11.5px">${escapeHtml((b.descricao||'').slice(0,70))}</div></td>
@@ -1982,6 +2020,8 @@ function renderFaturamentoTab(contract, client) {
       <td>${dateField('Proforma aprovada', 'proformaApprovedDate', b.proformaApprovedDate)}</td>
       <td>${dateField('NF enviada', 'nfSentDate', b.nfSentDate)}</td>
       <td>${dateField('Pagamento', 'paymentDate', b.paymentDate)}</td>
+      <td>${b.necessitaProvisao === 'sim' ? '<span style="color:var(--warning);font-weight:700">Sim</span>' : b.necessitaProvisao === 'nao' ? '<span class="muted">Não</span>' : '<span class="muted">—</span>'}${b.mesProvisao ? `<div class="muted" style="font-size:11px">${escapeHtml(mesAnoToLabel(b.mesProvisao))}</div>` : ''}</td>
+      <td>${b.provisionado === 'sim' ? '<span style="color:var(--success);font-weight:700">Sim</span>' : b.provisionado === 'nao' ? '<span class="muted">Não</span>' : '<span class="muted">—</span>'}${b.mesProvisionado ? `<div class="muted" style="font-size:11px">${escapeHtml(mesAnoToLabel(b.mesProvisionado))}</div>` : ''}</td>
       <td style="white-space:nowrap;min-width:160px">
         <div style="display:inline-grid;grid-template-columns:repeat(2,auto);gap:4px">
           <button class="btn btn-outline btn-sm" data-gen-bm="${b.id}" title="Gerar BM" ${!hasBmTemplate ? 'disabled' : ''}>${icon('sheet')}BM</button>
@@ -2017,8 +2057,8 @@ function renderFaturamentoTab(contract, client) {
       <div class="card-pad" style="padding-bottom:0"><div class="section-title">Status de cada marco</div></div>
       <div class="table-wrap" style="border:none">
         <table class="tbl-center-head">
-          <thead><tr><th>Marco</th><th>Valor</th><th>Status</th><th>BM enviado</th><th>Proforma enviada</th><th>BM Aprovado</th><th>Proforma Aprovada</th><th>NF enviada</th><th>Pagamento</th><th>Ação</th></tr></thead>
-          <tbody>${rows || `<tr><td colspan="10" class="tbl-empty">Cadastre marcos na aba "Marcos de faturamento" primeiro.</td></tr>`}</tbody>
+          <thead><tr><th>Marco</th><th>Valor</th><th>Status</th><th>BM enviado</th><th>Proforma enviada</th><th>BM Aprovado</th><th>Proforma Aprovada</th><th>NF enviada</th><th>Pagamento</th><th>Necessita provisão?</th><th>Provisionado?</th><th>Ação</th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="12" class="tbl-empty">Cadastre marcos na aba "Marcos de faturamento" primeiro.</td></tr>`}</tbody>
         </table>
       </div>
     </div>`;
@@ -2057,13 +2097,13 @@ function renderLinhasModal(billing, contract, client, opts) {
         <div class="field"><label>Necessita provisão?</label>
           <select id="necessitaProvisaoEdit"><option value="">—</option><option value="sim" ${billing.necessitaProvisao === 'sim' ? 'selected' : ''}>Sim</option><option value="nao" ${billing.necessitaProvisao === 'nao' ? 'selected' : ''}>Não</option></select>
         </div>
-        <div class="field"><label>Mês que deveria ser provisionado</label><input type="text" id="mesProvisaoEdit" placeholder="ex: Nov/2026" value="${escapeHtml(billing.mesProvisao||'')}"></div>
+        <div class="field"><label>Mês que deveria ser provisionado</label>${mesAnoPickerHTML(billing.mesProvisao, 'mesProvisao')}</div>
       </div>
       <div class="field-row">
         <div class="field"><label>Provisionado? (confirmação contábil)</label>
           <select id="provisionadoEdit"><option value="">—</option><option value="sim" ${billing.provisionado === 'sim' ? 'selected' : ''}>Sim</option><option value="nao" ${billing.provisionado === 'nao' ? 'selected' : ''}>Não</option></select>
         </div>
-        <div class="field"><label>Mês em que foi provisionado</label><input type="text" id="mesProvisionadoEdit" placeholder="ex: Dez/2026" value="${escapeHtml(billing.mesProvisionado||'')}"></div>
+        <div class="field"><label>Mês em que foi provisionado</label>${mesAnoPickerHTML(billing.mesProvisionado, 'mesProvisionado')}</div>
       </div>
       <div class="field"><label>Observação</label><textarea id="observacoesEdit" rows="2" placeholder="ex: aguardando novo PC do cliente...">${escapeHtml(billing.observacoes||'')}</textarea></div>
     </div>`;
@@ -2184,18 +2224,19 @@ function confirmDeleteContract(contract) {
 
 async function deleteContract(contract) {
   const bs = billingsForContract(contract.id);
+  const lines = contractLinesForContract(contract.id);
   for (const b of bs) {
     if (b.custoPrevistoFilePath) await deleteFileFromStorage(b.custoPrevistoFilePath);
     if (b.custoRealizadoFilePath) await deleteFileFromStorage(b.custoRealizadoFilePath);
   }
   if (contract.bmTemplatePath) await deleteFileFromStorage(contract.bmTemplatePath);
   if (contract.proformaTemplatePath) await deleteFileFromStorage(contract.proformaTemplatePath);
+  for (const b of bs) await deleteFirestoreDoc('billings', b.id);
+  for (const l of lines) await deleteFirestoreDoc('contractLines', l.id);
+  await deleteFirestoreDoc('contracts', contract.id);
   DB.billings = DB.billings.filter(b => b.contractId !== contract.id);
   DB.contractLines = DB.contractLines.filter(l => l.contractId !== contract.id);
   DB.contracts = DB.contracts.filter(c => c.id !== contract.id);
-  await dbSave('billings');
-  await dbSave('contractLines');
-  await dbSave('contracts');
 }
 
 /* ---------- event wiring ---------- */
@@ -2319,8 +2360,9 @@ function wireContractDetailEvents(contract, tab) {
     document.querySelectorAll('[data-del-milestone]').forEach(el => {
       el.addEventListener('click', async () => {
         if (!confirm('Remover este marco de faturamento? Esta ação não pode ser desfeita.')) return;
-        DB.billings = DB.billings.filter(b => b.id !== el.dataset.delMilestone);
-        await dbSave('billings');
+        const id = el.dataset.delMilestone;
+        DB.billings = DB.billings.filter(b => b.id !== id);
+        await deleteFirestoreDoc('billings', id);
         toast('Marco removido.', 'ok');
         render();
       });
@@ -2350,8 +2392,9 @@ function wireContractDetailEvents(contract, tab) {
     document.querySelectorAll('[data-del-line]').forEach(el => {
       el.addEventListener('click', async () => {
         if (!confirm('Remover este item de preço? Marcos que já usam essa linha vão perder a referência.')) return;
-        DB.contractLines = DB.contractLines.filter(l => l.id !== el.dataset.delLine);
-        await dbSave('contractLines');
+        const id = el.dataset.delLine;
+        DB.contractLines = DB.contractLines.filter(l => l.id !== id);
+        await deleteFirestoreDoc('contractLines', id);
         toast('Item removido.', 'ok');
         render();
       });
@@ -2456,13 +2499,11 @@ function wireContractDetailEvents(contract, tab) {
             if (codEl && codEl.value.trim()) billing.codigo = codEl.value.trim();
             if (descEl) billing.descricao = descEl.value.trim();
             const necProvEl = document.getElementById('necessitaProvisaoEdit');
-            const mesProvEl = document.getElementById('mesProvisaoEdit');
             const provEl = document.getElementById('provisionadoEdit');
-            const mesProvedEl = document.getElementById('mesProvisionadoEdit');
             if (necProvEl) billing.necessitaProvisao = necProvEl.value;
-            if (mesProvEl) billing.mesProvisao = mesProvEl.value.trim();
+            billing.mesProvisao = readMesAnoPicker('mesProvisao');
             if (provEl) billing.provisionado = provEl.value;
-            if (mesProvedEl) billing.mesProvisionado = mesProvedEl.value.trim();
+            billing.mesProvisionado = readMesAnoPicker('mesProvisionado');
             const obsEl = document.getElementById('observacoesEdit');
             if (obsEl) billing.observacoes = obsEl.value.trim();
           }
@@ -2532,7 +2573,7 @@ function wireContractDetailEvents(contract, tab) {
         if (!b) return;
         if (!confirm(`Excluir o marco "${b.codigo}"? Isso remove o registro de faturamento (datas, itens, status) do sistema — não pode ser desfeito.`)) return;
         DB.billings = DB.billings.filter(x => x.id !== b.id);
-        await dbSave('billings');
+        await deleteFirestoreDoc('billings', b.id);
         toast('Marco excluído.', 'ok');
         render();
       });
@@ -3325,6 +3366,8 @@ async function generateFichaDocx(client, contract) {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
   return fileName;
 }
+let pendenciasFiltroMes = "";
+
 /* ---------- GERENTES OCEANPACT (banco de dados interno) ---------- */
 function sortedManagers() {
   return [...DB.managers].sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR', { sensitivity: 'base' }));
@@ -3332,6 +3375,17 @@ function sortedManagers() {
 
 function managerLabel(m) {
   return `${m.nome || ''}${m.empresa ? ' — ' + m.empresa : ''}`;
+}
+
+// Rótulos únicos pra evitar ambiguidade quando dois gerentes têm nome+empresa
+// iguais — nesse caso, acrescenta um sufixo (2), (3)... só nos que colidem.
+function uniqueManagerLabels(list) {
+  const seen = {};
+  return list.map(m => {
+    const base = managerLabel(m);
+    seen[base] = (seen[base] || 0) + 1;
+    return { m, label: seen[base] > 1 ? `${base} (${seen[base]})` : base };
+  });
 }
 
 function renderManagersPage() {
@@ -3378,8 +3432,9 @@ function wireManagersEvents() {
   document.querySelectorAll('[data-del-manager]').forEach(el => {
     el.addEventListener('click', async () => {
       if (!confirm('Remover este gerente do cadastro?')) return;
-      DB.managers = DB.managers.filter(m => m.id !== el.dataset.delManager);
-      await dbSave('managers');
+      const id = el.dataset.delManager;
+      DB.managers = DB.managers.filter(m => m.id !== id);
+      await deleteFirestoreDoc('managers', id);
       toast('Gerente removido.', 'ok');
       render();
     });
@@ -3395,12 +3450,13 @@ function wireManagersEvents() {
 /* ---------- campo de busca "Gerente responsável" (datalist nativo) ---------- */
 function managerPickerHTML(currentId, inputId) {
   const list = sortedManagers();
-  const current = list.find(m => m.id === currentId);
-  const options = list.map(m => `<option value="${escapeHtml(managerLabel(m))}">`).join('');
+  const labeled = uniqueManagerLabels(list);
+  const current = labeled.find(x => x.m.id === currentId);
+  const options = labeled.map(x => `<option value="${escapeHtml(x.label)}">`).join('');
   return `
     <div style="display:flex;gap:6px;align-items:flex-end">
       <div class="field" style="flex:1;margin-bottom:0">
-        <input type="text" id="${inputId}" list="${inputId}List" placeholder="Digite para buscar…" value="${escapeHtml(current ? managerLabel(current) : '')}" autocomplete="off">
+        <input type="text" id="${inputId}" list="${inputId}List" placeholder="Digite para buscar…" value="${escapeHtml(current ? current.label : '')}" autocomplete="off">
         <datalist id="${inputId}List">${options}</datalist>
       </div>
       <button type="button" class="btn btn-outline btn-sm" id="${inputId}Clear" title="Limpar seleção">${icon('x')}</button>
@@ -3410,8 +3466,9 @@ function managerPickerHTML(currentId, inputId) {
 function resolveManagerFromInput(inputEl) {
   const typed = (inputEl.value || '').trim();
   if (!typed) return '';
-  const found = sortedManagers().find(m => managerLabel(m) === typed);
-  return found ? found.id : '';
+  const labeled = uniqueManagerLabels(sortedManagers());
+  const found = labeled.find(x => x.label === typed);
+  return found ? found.m.id : '';
 }
 
 /* ---------- CATEGORIAS / UNIDADES DE NEGÓCIO POR EMPRESA DO GRUPO OCEANPACT ---------- */
@@ -3494,8 +3551,9 @@ function wireCategoriasEvents() {
   document.querySelectorAll('[data-del-empresa]').forEach(el => {
     el.addEventListener('click', async () => {
       if (!confirm('Remover esta empresa e suas categorias do cadastro?')) return;
-      DB.categoriaGrupos = DB.categoriaGrupos.filter(g => g.id !== el.dataset.delEmpresa);
-      await dbSave('categoriaGrupos');
+      const id = el.dataset.delEmpresa;
+      DB.categoriaGrupos = DB.categoriaGrupos.filter(g => g.id !== id);
+      await deleteFirestoreDoc('categoriaGrupos', id);
       toast('Empresa removida.', 'ok');
       render();
     });
@@ -3531,7 +3589,14 @@ function wireCategoriasEvents() {
 /* ---------- PENDÊNCIAS DE FATURAMENTO (visão cross-contrato) ---------- */
 function renderPendenciasPage() {
   const all = DB.billings.map(b => ({ b, contract: getContract(b.contractId) })).filter(x => x.contract);
-  const pendentes = all.filter(({ b }) => computeStatus(b) !== 'pago');
+  // Só entra na lista quem já teve o BM gerado mas ainda não teve a NF emitida —
+  // antes disso não é uma "pendência de faturamento" de verdade ainda.
+  let pendentes = all.filter(({ b }) => !!b.bmGeneratedDate && !b.nfSentDate);
+
+  const mesesDisponiveis = Array.from(new Set(pendentes.map(({ b }) => b.mesProvisao).filter(Boolean))).sort();
+  if (pendenciasFiltroMes && mesesDisponiveis.includes(pendenciasFiltroMes)) {
+    pendentes = pendentes.filter(({ b }) => b.mesProvisao === pendenciasFiltroMes);
+  }
 
   const totalPendente = pendentes.reduce((s, { b }) => s + (Number(b.valor) || 0), 0);
   const esqueceramProvisao = pendentes.filter(({ b }) => b.necessitaProvisao === 'sim' && b.provisionado !== 'sim').length;
@@ -3543,7 +3608,6 @@ function renderPendenciasPage() {
       const ct = client && (client.contatos||[]).find(c => c.id === contract.pontoFocalId);
       const st = computeStatus(b);
       const simNao = (v) => v ? `<span style="color:var(--success)">Sim</span>` : `<span class="muted">Não</span>`;
-      const provisaoAlerta = (b.necessitaProvisao === 'sim' && b.provisionado !== 'sim');
       return `
       <tr class="clickable" data-goto="contrato/${contract.id}/faturamento">
         <td><strong>${escapeHtml(b.codigo)}</strong><div class="muted" style="font-size:11.5px;max-width:200px">${escapeHtml((b.descricao||'').slice(0,60))}</div></td>
@@ -3568,7 +3632,17 @@ function renderPendenciasPage() {
       <div class="stat-card"><div class="stat-top"><div class="stat-label">⚠ Esqueceram de provisionar</div><div class="stat-icon" style="background:var(--warning-bg);color:var(--warning)">${icon('alert')}</div></div><div class="stat-value">${esqueceramProvisao}</div></div>
     </div>
     <div class="card">
-      <div class="card-pad" style="padding-bottom:0"><div class="section-title">Pendências de faturamento (todos os contratos)</div><p class="help">Todo marco/faturamento com status diferente de "Pago". Clique numa linha para abrir o contrato.</p></div>
+      <div class="card-pad" style="padding-bottom:0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div><div class="section-title" style="margin-bottom:2px">Pendências de faturamento (todos os contratos)</div><p class="help" style="margin:0">Marcos com o BM já gerado, mas ainda sem a NF emitida. Clique numa linha para abrir o contrato.</p></div>
+        ${mesesDisponiveis.length ? `
+        <div class="field" style="margin-bottom:0;min-width:200px">
+          <label style="font-size:11px">Filtrar por mês de provisão previsto</label>
+          <select id="pendenciasFiltroMesSelect">
+            <option value="">Todos os meses</option>
+            ${mesesDisponiveis.map(m => `<option value="${m}" ${m === pendenciasFiltroMes ? 'selected' : ''}>${mesAnoToLabel(m)}</option>`).join('')}
+          </select>
+        </div>` : ''}
+      </div>
       <div class="table-wrap" style="border:none">
         <table class="tbl-center-head">
           <thead><tr><th>Serviço</th><th>Cliente</th><th>Contrato</th><th>Valor</th><th>BM Enviado?</th><th>Proforma Enviada?</th><th>BM Aprovado?</th><th>NF Emitida?</th><th>Provisionado?</th><th>Status</th><th>Ponto Focal</th><th>Observação</th></tr></thead>
@@ -3578,6 +3652,11 @@ function renderPendenciasPage() {
     </div>`;
   layout(html, { title: 'Pendências de Faturamento', crumbs: `${pendentes.length} pendência(s) em ${new Set(pendentes.map(p=>p.contract.id)).size} contrato(s)` });
   bindGoto();
+  const filtroSelect = document.getElementById('pendenciasFiltroMesSelect');
+  if (filtroSelect) filtroSelect.addEventListener('change', () => {
+    pendenciasFiltroMes = filtroSelect.value;
+    render();
+  });
 }
 /* ---------- NOVO CONTRATO WIZARD ---------- */
 let wizard = null;
